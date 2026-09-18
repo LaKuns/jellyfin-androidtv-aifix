@@ -42,14 +42,15 @@ class AsyncImageView @JvmOverloads constructor(
 ) : AppCompatImageView(context, attrs, defStyleAttr), KoinComponent {
 	companion object {
 		private const val DEFAULT_CROSSFADE_DURATION_MS = 100
-		private const val LOW_PERFORMANCE_IMAGE_CONCURRENCY = 2
-		private val lowPerformanceImageSemaphore = Semaphore(LOW_PERFORMANCE_IMAGE_CONCURRENCY)
+		private val lowPerformanceBackgroundImageSemaphore = Semaphore(1)
+		private val lowPerformanceFocusedImageSemaphore = Semaphore(1)
 	}
 
 	private val lifeCycleOwner get() = findViewTreeLifecycleOwner()
 	private val imageLoader by inject<ImageLoader>()
 	private var loadJob: Job? = null
-	private var pendingRequestKey: ImageRequestKey? = null
+	private var pendingRequest: PendingImageRequest? = null
+	private var requestStarted = false
 	private val imageStyle = context.obtainStyledAttributes(attrs, R.styleable.AsyncImageView, defStyleAttr, 0).let { attributes ->
 		try {
 			ImageStyle(
@@ -73,6 +74,15 @@ class AsyncImageView @JvmOverloads constructor(
 		val url: String?,
 		val blurHash: String?,
 		val circleCrop: Boolean,
+		val aspectRatio: Double,
+		val blurHashResolution: Int,
+	)
+
+	private data class PendingImageRequest(
+		val key: ImageRequestKey,
+		val url: String?,
+		val blurHash: String?,
+		val placeholder: Drawable?,
 		val aspectRatio: Double,
 		val blurHashResolution: Int,
 	)
@@ -102,35 +112,46 @@ class AsyncImageView @JvmOverloads constructor(
 		blurHashResolution: Int = 32,
 	) {
 		val requestKey = ImageRequestKey(url, blurHash, circleCrop, aspectRatio, blurHashResolution)
-		if (requestKey == pendingRequestKey && loadJob?.isActive == true) return
-		pendingRequestKey = requestKey
+		if (requestKey == pendingRequest?.key && loadJob?.isActive == true) return
+		val request = PendingImageRequest(requestKey, url, blurHash, placeholder, aspectRatio, blurHashResolution)
+		pendingRequest = request
+		schedule(request, prioritized = false)
+	}
 
+	/** Promote a queued image when its card receives focus. */
+	fun prioritize() {
+		if (!PerformanceProfile.isLowPerformanceDevice(context) || requestStarted) return
+		pendingRequest?.let { schedule(it, prioritized = true) }
+	}
+
+	private fun schedule(pending: PendingImageRequest, prioritized: Boolean) {
 		doOnAttach {
 			// RecyclerView may bind the same view several times before it is
 			// attached. Only the most recent request should reach Coil.
-			if (requestKey != pendingRequestKey) return@doOnAttach
+			if (pending !== pendingRequest) return@doOnAttach
 			// Cancel the previous load if still running
 			loadJob?.cancel()
+			requestStarted = false
 
 			loadJob = lifeCycleOwner?.lifecycleScope?.launch {
-				var placeholderOrBlurHash = placeholder
+				var placeholderOrBlurHash = pending.placeholder
 
 				// Only show blurhash if an image is going to be loaded from the network
 				val isLowPerformanceDevice = PerformanceProfile.isLowPerformanceDevice(context)
-				if (url != null && blurHash != null && !isLowPerformanceDevice && aspectRatio > 0) withContext(Dispatchers.Default) {
+				if (pending.url != null && pending.blurHash != null && !isLowPerformanceDevice && pending.aspectRatio > 0) withContext(Dispatchers.Default) {
 					val blurHashBitmap = BlurHashDecoder.decode(
-						blurHash,
-						if (aspectRatio > 1) round(blurHashResolution * aspectRatio).toInt() else blurHashResolution,
-						if (aspectRatio >= 1) blurHashResolution else round(blurHashResolution / aspectRatio).toInt(),
+						pending.blurHash,
+						if (pending.aspectRatio > 1) round(pending.blurHashResolution * pending.aspectRatio).toInt() else pending.blurHashResolution,
+						if (pending.aspectRatio >= 1) pending.blurHashResolution else round(pending.blurHashResolution / pending.aspectRatio).toInt(),
 					)
 					if (blurHashBitmap != null) placeholderOrBlurHash = blurHashBitmap.toDrawable(resources)
 				}
 
 				// Start loading image or placeholder
-				val request = if (url == null) {
+				val imageRequest = if (pending.url == null) {
 					ImageRequest.Builder(context).apply {
 						target(this@AsyncImageView)
-						data(placeholder)
+						data(pending.placeholder)
 						if (circleCrop) transformations(CircleCropTransformation())
 					}.build()
 				} else {
@@ -140,19 +161,27 @@ class AsyncImageView @JvmOverloads constructor(
 						else crossfade(false)
 
 						target(this@AsyncImageView)
-						data(url)
+						data(pending.url)
 						placeholder(placeholderOrBlurHash?.asImage())
 						if (circleCrop) transformations(CircleCropTransformation())
-						error(placeholder?.asImage())
+						error(pending.placeholder?.asImage())
 					}.build()
 				}
 
 				if (isLowPerformanceDevice) {
-					lowPerformanceImageSemaphore.withPermit {
-						imageLoader.enqueue(request).job.await()
+					val semaphore = if (prioritized) {
+						lowPerformanceFocusedImageSemaphore
+					} else {
+						lowPerformanceBackgroundImageSemaphore
+					}
+					semaphore.withPermit {
+						if (pending !== pendingRequest) return@withPermit
+						requestStarted = true
+						imageLoader.enqueue(imageRequest).job.await()
 					}
 				} else {
-					imageLoader.enqueue(request).job.await()
+					requestStarted = true
+					imageLoader.enqueue(imageRequest).job.await()
 				}
 			}
 		}
@@ -162,7 +191,8 @@ class AsyncImageView @JvmOverloads constructor(
 	fun clear() {
 		loadJob?.cancel()
 		loadJob = null
-		pendingRequestKey = null
+		pendingRequest = null
+		requestStarted = false
 		setImageDrawable(null)
 	}
 }

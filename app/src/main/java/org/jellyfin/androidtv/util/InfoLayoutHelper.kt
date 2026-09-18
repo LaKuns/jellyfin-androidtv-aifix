@@ -127,10 +127,14 @@ object InfoLayoutHelper {
 		layout: LinearLayout,
 		includeRuntime: Boolean,
 	) {
-		val existing = (0 until layout.childCount)
-			.map(layout::getChildAt)
-			.filterIsInstance<LowPerformanceInfoRowView>()
-			.firstOrNull()
+		var existing: LowPerformanceInfoRowView? = null
+		for (index in 0 until layout.childCount) {
+			val child = layout.getChildAt(index)
+			if (child is LowPerformanceInfoRowView) {
+				existing = child
+				break
+			}
+		}
 		val view = existing ?: LowPerformanceInfoRowView(context).also {
 			// This replacement happens once per screen, not on every focus move.
 			layout.removeAllViews()

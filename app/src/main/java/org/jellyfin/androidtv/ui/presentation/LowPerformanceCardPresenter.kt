@@ -1,5 +1,7 @@
 package org.jellyfin.androidtv.ui.presentation
 
+import android.content.Context
+import android.graphics.Rect
 import android.text.TextUtils
 import android.view.Gravity
 import android.view.KeyEvent
@@ -49,6 +51,16 @@ class LowPerformanceCardPresenter(
 		val subtitle: TextView,
 	) : ViewHolder(root)
 
+	private class FocusAwareCardLayout(
+		context: Context,
+		private val onFocused: () -> Unit,
+	) : LinearLayout(context) {
+		override fun onFocusChanged(gainFocus: Boolean, direction: Int, previouslyFocusedRect: Rect?) {
+			super.onFocusChanged(gainFocus, direction, previouslyFocusedRect)
+			if (gainFocus) onFocused()
+		}
+	}
+
 	override fun onCreateViewHolder(parent: ViewGroup): ViewHolder {
 		val context = parent.context
 		val image = AsyncImageView(context).apply {
@@ -58,7 +70,7 @@ class LowPerformanceCardPresenter(
 			background = ContextCompat.getDrawable(context, R.drawable.shape_card_image_background)
 			clipToOutline = true
 		}
-		val root = LinearLayout(context).apply {
+		val root = FocusAwareCardLayout(context, image::prioritize).apply {
 			orientation = LinearLayout.VERTICAL
 			isFocusable = true
 			isFocusableInTouchMode = true
