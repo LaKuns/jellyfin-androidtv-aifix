@@ -97,13 +97,13 @@ object BrowsingUtils {
 		limit = 50,
 		parentId = parentId,
 		imageTypeLimit = 1,
-		fields = ItemRepository.itemFields
+		fields = ItemRepository.cardFields
 	)
 
 	@JvmStatic
 	fun createSeriesGetNextUpRequest(parentId: UUID) = GetNextUpRequest(
 		seriesId = parentId,
-		fields = ItemRepository.itemFields
+		fields = ItemRepository.cardFields
 	)
 
 	@JvmStatic
@@ -113,7 +113,7 @@ object BrowsingUtils {
 		itemType: BaseItemKind? = null,
 		groupItems: Boolean? = null
 	) = GetLatestMediaRequest(
-		fields = ItemRepository.itemFields,
+		fields = ItemRepository.cardFields,
 		parentId = parentId,
 		limit = 50,
 		imageTypeLimit = 1,
@@ -124,26 +124,26 @@ object BrowsingUtils {
 	@JvmStatic
 	fun createSeasonsRequest(seriesId: UUID) = GetSeasonsRequest(
 		seriesId = seriesId,
-		fields = ItemRepository.itemFields,
+		fields = ItemRepository.cardFields,
 	)
 
 	@JvmStatic
 	fun createUpcomingEpisodesRequest(parentId: UUID) = GetUpcomingEpisodesRequest(
 		parentId = parentId,
-		fields = ItemRepository.itemFields,
+		fields = ItemRepository.cardFields,
 	)
 
 	@JvmStatic
 	fun createSimilarItemsRequest(itemId: UUID) = GetSimilarItemsRequest(
 		itemId = itemId,
-		fields = ItemRepository.itemFields,
+		fields = ItemRepository.cardFields,
 		limit = 20,
 	)
 
 	@JvmStatic
 	fun createLiveTVOnNowRequest() = GetRecommendedProgramsRequest(
 		isAiring = true,
-		fields = ItemRepository.itemFields,
+		fields = ItemRepository.cardFields,
 		imageTypeLimit = 1,
 		enableTotalRecordCount = false,
 		limit = 150,
@@ -153,7 +153,7 @@ object BrowsingUtils {
 	fun createLiveTVUpcomingRequest() = GetRecommendedProgramsRequest(
 		isAiring = false,
 		hasAired = false,
-		fields = ItemRepository.itemFields,
+		fields = ItemRepository.cardFields,
 		imageTypeLimit = 1,
 		enableTotalRecordCount = false,
 		limit = 150,
@@ -162,14 +162,14 @@ object BrowsingUtils {
 	@JvmStatic
 	@JvmOverloads
 	fun createLiveTVRecordingsRequest(limit: Int? = null) = GetRecordingsRequest(
-		fields = ItemRepository.itemFields,
+		fields = ItemRepository.cardFields,
 		enableImages = true,
 		limit = limit,
 	)
 
 	@JvmStatic
 	fun createLiveTVMovieRecordingsRequest() = GetRecordingsRequest(
-		fields = ItemRepository.itemFields,
+		fields = ItemRepository.cardFields,
 		enableImages = true,
 		limit = 60,
 		isMovie = true,
@@ -177,7 +177,7 @@ object BrowsingUtils {
 
 	@JvmStatic
 	fun createLiveTVSeriesRecordingsRequest() = GetRecordingsRequest(
-		fields = ItemRepository.itemFields,
+		fields = ItemRepository.cardFields,
 		enableImages = true,
 		limit = 60,
 		isSeries = true,
@@ -185,7 +185,7 @@ object BrowsingUtils {
 
 	@JvmStatic
 	fun createLiveTVSportsRecordingsRequest() = GetRecordingsRequest(
-		fields = ItemRepository.itemFields,
+		fields = ItemRepository.cardFields,
 		enableImages = true,
 		limit = 60,
 		isSports = true,
@@ -193,7 +193,7 @@ object BrowsingUtils {
 
 	@JvmStatic
 	fun createLiveTVKidsRecordingsRequest() = GetRecordingsRequest(
-		fields = ItemRepository.itemFields,
+		fields = ItemRepository.cardFields,
 		enableImages = true,
 		limit = 60,
 		isKids = true,
@@ -206,19 +206,19 @@ object BrowsingUtils {
 
 	@JvmStatic
 	fun createAlbumArtistsRequest(parentId: UUID) = GetAlbumArtistsRequest(
-		fields = ItemRepository.itemFields,
+		fields = ItemRepository.cardFields,
 		parentId = parentId,
 	)
 
 	@JvmStatic
 	fun createArtistsRequest(parentId: UUID) = GetArtistsRequest(
-		fields = ItemRepository.itemFields,
+		fields = ItemRepository.cardFields,
 		parentId = parentId,
 	)
 
 	@JvmStatic
 	fun createPersonItemsRequest(personId: UUID, itemType: BaseItemKind) = GetItemsRequest(
-		fields = ItemRepository.itemFields,
+		fields = ItemRepository.cardFields,
 		personIds = setOf(personId),
 		recursive = true,
 		includeItemTypes = setOf(itemType),
@@ -228,7 +228,7 @@ object BrowsingUtils {
 
 	@JvmStatic
 	fun createArtistItemsRequest(artistId: UUID, itemType: BaseItemKind) = GetItemsRequest(
-		fields = ItemRepository.itemFields,
+		fields = ItemRepository.cardFields,
 		artistIds = setOf(artistId),
 		recursive = true,
 		includeItemTypes = setOf(itemType),
@@ -238,7 +238,7 @@ object BrowsingUtils {
 
 	@JvmStatic
 	fun createNextEpisodesRequest(seasonId: UUID, indexNumber: Int) = GetItemsRequest(
-		fields = ItemRepository.itemFields,
+		fields = ItemRepository.cardFields,
 		parentId = seasonId,
 		includeItemTypes = setOf(BaseItemKind.EPISODE),
 		startIndex = indexNumber,
@@ -247,7 +247,7 @@ object BrowsingUtils {
 
 	@JvmStatic
 	fun createResumeItemsRequest(parentId: UUID, itemType: BaseItemKind) = GetItemsRequest(
-		fields = ItemRepository.itemFields,
+		fields = ItemRepository.cardFields,
 		includeItemTypes = setOf(itemType),
 		recursive = true,
 		parentId = parentId,
@@ -262,7 +262,7 @@ object BrowsingUtils {
 
 	@JvmStatic
 	fun createFavoriteItemsRequest(parentId: UUID, itemType: BaseItemKind) = GetItemsRequest(
-		fields = ItemRepository.itemFields,
+		fields = ItemRepository.cardFields,
 		includeItemTypes = setOf(itemType),
 		recursive = true,
 		parentId = parentId,
@@ -274,7 +274,7 @@ object BrowsingUtils {
 
 	@JvmStatic
 	fun createCollectionsRequest(parentId: UUID) = GetItemsRequest(
-		fields = ItemRepository.itemFields,
+		fields = ItemRepository.cardFields,
 		includeItemTypes = setOf(BaseItemKind.BOX_SET),
 		recursive = true,
 		imageTypeLimit = 1,
@@ -284,7 +284,7 @@ object BrowsingUtils {
 
 	@JvmStatic
 	fun createLastPlayedRequest(parentId: UUID) = GetItemsRequest(
-		fields = ItemRepository.itemFields,
+		fields = ItemRepository.cardFields,
 		includeItemTypes = setOf(BaseItemKind.AUDIO),
 		recursive = true,
 		parentId = parentId,
@@ -298,7 +298,7 @@ object BrowsingUtils {
 
 	@JvmStatic
 	fun createPlaylistsRequest() = GetItemsRequest(
-		fields = ItemRepository.itemFields,
+		fields = ItemRepository.cardFields,
 		includeItemTypes = setOf(BaseItemKind.PLAYLIST),
 		imageTypeLimit = 1,
 		recursive = true,
@@ -308,8 +308,14 @@ object BrowsingUtils {
 
 	@JvmStatic
 	fun createBrowseGridItemsRequest(parent: BaseItemDto): GetItemsRequest {
+		val useLightweightFields = parent.collectionType == CollectionType.MOVIES ||
+			parent.collectionType == CollectionType.TVSHOWS ||
+			parent.type == BaseItemKind.SEASON
 		val baseRequest = GetItemsRequest(
-			fields = ItemRepository.itemFields,
+			// Browse grids only render card metadata. Playback-specific media sources,
+			// streams, chapters and trickplay data are fetched on demand. Movie and TV
+			// grids retain the overview used by the details preview.
+			fields = if (useLightweightFields) ItemRepository.browseFields else ItemRepository.cardFields,
 			parentId = parent.id,
 		)
 

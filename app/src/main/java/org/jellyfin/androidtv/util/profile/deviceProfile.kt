@@ -1,6 +1,7 @@
 package org.jellyfin.androidtv.util.profile
 
 import android.content.Context
+import android.util.Size
 import androidx.media3.common.MimeTypes
 import org.jellyfin.androidtv.constant.Codec
 import org.jellyfin.androidtv.preference.UserPreferences
@@ -9,6 +10,7 @@ import org.jellyfin.androidtv.preference.constant.BitstreamAudioFormat
 import org.jellyfin.androidtv.preference.constant.BitstreamAudioMode
 import org.jellyfin.androidtv.preference.constant.HdrFormat
 import org.jellyfin.androidtv.preference.constant.HdrOverrideMode
+import org.jellyfin.androidtv.util.PerformanceProfile
 import org.jellyfin.androidtv.util.profile.codec.isPassthroughAudioAvailable
 import org.jellyfin.sdk.model.ServerVersion
 import org.jellyfin.sdk.model.api.CodecType
@@ -94,21 +96,29 @@ fun createDeviceProfile(
 	context: Context,
 	userPreferences: UserPreferences,
 	serverVersion: ServerVersion,
-) = createDeviceProfile(
-	mediaTest = MediaCodecCapabilitiesTest(userPreferences[UserPreferences.softwareCodecsEnabled]),
-	maxBitrate = userPreferences.getMaxBitrate(),
-	isAC3PrefEnabled = userPreferences.isBitstreamAudioEnabled(context, BitstreamAudioFormat.AC3),
-	isEAC3PrefEnabled = userPreferences.isBitstreamAudioEnabled(context, BitstreamAudioFormat.EAC3),
-	isDTSPrefEnabled = userPreferences.isBitstreamAudioEnabled(context, BitstreamAudioFormat.DTS),
-	isTrueHDPrefEnabled = userPreferences.isBitstreamAudioEnabled(context, BitstreamAudioFormat.TRUEHD),
-	downMixAudio = userPreferences[UserPreferences.audioBehaviour] == AudioBehavior.DOWNMIX_TO_STEREO,
-	assDirectPlay = userPreferences[UserPreferences.assDirectPlay],
-	pgsDirectPlay = userPreferences[UserPreferences.pgsDirectPlay],
-	userAVCLevel = userPreferences[UserPreferences.userAVCLevel].level,
-	userHEVCLevel = userPreferences[UserPreferences.userHEVCLevel].level,
-	forceEnabledHdr = userPreferences.getHdrRangeTypesFor(HdrOverrideMode.ENABLE),
-	forceDisabledHdr = userPreferences.getHdrRangeTypesFor(HdrOverrideMode.DISABLE),
-)
+) = PerformanceProfile.isLowPerformanceDevice(context).let { lowPerformanceDevice ->
+	createDeviceProfile(
+		mediaTest = MediaCodecCapabilitiesTest(
+			userPreferences[UserPreferences.softwareCodecsEnabled] && !lowPerformanceDevice
+		),
+		maxBitrate = userPreferences.getMaxBitrate().let { bitrate ->
+			if (lowPerformanceDevice) minOf(bitrate, PerformanceProfile.LOW_PERFORMANCE_MAX_VIDEO_BITRATE) else bitrate
+		},
+		isAC3PrefEnabled = userPreferences.isBitstreamAudioEnabled(context, BitstreamAudioFormat.AC3),
+		isEAC3PrefEnabled = userPreferences.isBitstreamAudioEnabled(context, BitstreamAudioFormat.EAC3),
+		isDTSPrefEnabled = userPreferences.isBitstreamAudioEnabled(context, BitstreamAudioFormat.DTS),
+		isTrueHDPrefEnabled = userPreferences.isBitstreamAudioEnabled(context, BitstreamAudioFormat.TRUEHD),
+		downMixAudio = userPreferences[UserPreferences.audioBehaviour] == AudioBehavior.DOWNMIX_TO_STEREO,
+		assDirectPlay = userPreferences[UserPreferences.assDirectPlay],
+		pgsDirectPlay = userPreferences[UserPreferences.pgsDirectPlay],
+		userAVCLevel = userPreferences[UserPreferences.userAVCLevel].level,
+		userHEVCLevel = userPreferences[UserPreferences.userHEVCLevel].level,
+		forceEnabledHdr = userPreferences.getHdrRangeTypesFor(HdrOverrideMode.ENABLE),
+		forceDisabledHdr = userPreferences.getHdrRangeTypesFor(HdrOverrideMode.DISABLE),
+		maxVideoWidth = PerformanceProfile.LOW_PERFORMANCE_MAX_VIDEO_WIDTH.takeIf { lowPerformanceDevice },
+		maxVideoHeight = PerformanceProfile.LOW_PERFORMANCE_MAX_VIDEO_HEIGHT.takeIf { lowPerformanceDevice },
+	)
+}
 
 fun createDeviceProfile(
 	mediaTest: MediaCodecCapabilitiesTest,
@@ -123,7 +133,9 @@ fun createDeviceProfile(
 	userAVCLevel: Int?,
 	userHEVCLevel: Int?,
 	forceEnabledHdr: Set<VideoRangeType>,
-	forceDisabledHdr: Set<VideoRangeType>
+	forceDisabledHdr: Set<VideoRangeType>,
+	maxVideoWidth: Int? = null,
+	maxVideoHeight: Int? = null,
 ) = buildDeviceProfile {
 	val allowedAudioCodecs = when {
 		downMixAudio -> downmixSupportedAudioCodecs
@@ -149,10 +161,10 @@ fun createDeviceProfile(
 	val supportsAV1 = mediaTest.supportsAV1()
 	val supportsAV1Main10 = mediaTest.supportsAV1Main10()
 	val supportsVC1 = mediaTest.supportsVc1()
-	val maxResolutionAVC = mediaTest.getMaxResolution(MimeTypes.VIDEO_H264)
-	val maxResolutionHevc = mediaTest.getMaxResolution(MimeTypes.VIDEO_H265)
-	val maxResolutionAV1 = mediaTest.getMaxResolution(MimeTypes.VIDEO_AV1)
-	val maxResolutionVC1 = mediaTest.getMaxResolution(MimeTypes.VIDEO_VC1)
+	val maxResolutionAVC = mediaTest.getMaxResolution(MimeTypes.VIDEO_H264).limitTo(maxVideoWidth, maxVideoHeight)
+	val maxResolutionHevc = mediaTest.getMaxResolution(MimeTypes.VIDEO_H265).limitTo(maxVideoWidth, maxVideoHeight)
+	val maxResolutionAV1 = mediaTest.getMaxResolution(MimeTypes.VIDEO_AV1).limitTo(maxVideoWidth, maxVideoHeight)
+	val maxResolutionVC1 = mediaTest.getMaxResolution(MimeTypes.VIDEO_VC1).limitTo(maxVideoWidth, maxVideoHeight)
 
 	/// HDR capabilities
 
@@ -414,6 +426,32 @@ fun createDeviceProfile(
 		}
 	}
 
+	// The UI can remain responsive on some low-end TVs while their video decoder cannot
+	// sustain 4K/high bitrate direct play. Tell the server to produce a smaller stream
+	// instead of relying on a software decoder and dropping frames on the TV.
+	if (maxVideoWidth != null && maxVideoHeight != null) {
+		arrayOf(
+			Codec.Video.AV1,
+			Codec.Video.H264,
+			Codec.Video.HEVC,
+			Codec.Video.MPEG,
+			Codec.Video.MPEG2VIDEO,
+			Codec.Video.VP8,
+			Codec.Video.VP9,
+			Codec.Video.VC1,
+		).forEach { videoCodec ->
+			codecProfile {
+				type = CodecType.VIDEO
+				codec = videoCodec
+
+				conditions {
+					ProfileConditionValue.WIDTH lowerThanOrEquals maxVideoWidth
+					ProfileConditionValue.HEIGHT lowerThanOrEquals maxVideoHeight
+				}
+			}
+		}
+	}
+
 	// Get max resolutions for common codecs
 	// AVC
 	codecProfile {
@@ -590,3 +628,8 @@ private fun DeviceProfileBuilder.subtitleProfile(
 	if (hls) subtitleProfile(format, SubtitleDeliveryMethod.HLS)
 	if (encode) subtitleProfile(format, SubtitleDeliveryMethod.ENCODE)
 }
+
+private fun Size.limitTo(maxWidth: Int?, maxHeight: Int?): Size = Size(
+	width.coerceAtMost(maxWidth ?: width),
+	height.coerceAtMost(maxHeight ?: height),
+)

@@ -6,6 +6,7 @@ import coil3.ImageLoader
 import coil3.annotation.ExperimentalCoilApi
 import coil3.gif.AnimatedImageDecoder
 import coil3.gif.GifDecoder
+import coil3.memory.MemoryCache
 import coil3.network.NetworkFetcher
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.serviceLoaderEnabled
@@ -57,6 +58,7 @@ import org.jellyfin.androidtv.ui.startup.UserLoginViewModel
 import org.jellyfin.androidtv.util.AndroidVersion
 import org.jellyfin.androidtv.util.KeyProcessor
 import org.jellyfin.androidtv.util.MarkdownRenderer
+import org.jellyfin.androidtv.util.PerformanceProfile
 import org.jellyfin.androidtv.util.PlaybackHelper
 import org.jellyfin.androidtv.util.apiclient.ReportingHelper
 import org.jellyfin.androidtv.util.coil.CoilTimberLogger
@@ -122,15 +124,31 @@ val appModule = module {
 	}
 
 	single {
+		val lowPerformanceDevice = PerformanceProfile.isLowPerformanceDevice(androidContext())
 		ImageLoader.Builder(androidContext()).apply {
+			// Artwork is the largest recurring allocation while browsing.
+			// Keep the cache deliberately small on old TVs so navigating
+			// between libraries does not turn into a long GC pause.
+			memoryCache {
+				MemoryCache.Builder()
+					.maxSizePercent(
+						androidContext(),
+						if (lowPerformanceDevice) 0.10 else 0.18
+					)
+					.build()
+			}
 			serviceLoaderEnabled(false)
 			logger(CoilTimberLogger(if (BuildConfig.DEBUG) Logger.Level.Warn else Logger.Level.Error))
 
 			components {
 				add(get<NetworkFetcher.Factory>())
 
-				if (AndroidVersion.isAtLeastP) add(AnimatedImageDecoder.Factory())
-				else add(GifDecoder.Factory())
+				// Animated artwork continuously consumes decoder and render time even
+				// after a row has settled. Static fallbacks are preferable on old TVs.
+				if (!lowPerformanceDevice) {
+					if (AndroidVersion.isAtLeastP) add(AnimatedImageDecoder.Factory())
+					else add(GifDecoder.Factory())
+				}
 				add(SvgDecoder.Factory())
 			}
 		}.build()

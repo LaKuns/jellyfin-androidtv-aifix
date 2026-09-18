@@ -13,9 +13,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
@@ -32,7 +33,6 @@ import androidx.lifecycle.findViewTreeLifecycleOwner
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.savedstate.findViewTreeSavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
-import kotlinx.coroutines.flow.MutableStateFlow
 import org.jellyfin.androidtv.R
 import org.jellyfin.androidtv.constant.ImageType
 import org.jellyfin.androidtv.ui.base.JellyfinTheme
@@ -46,6 +46,7 @@ import org.jellyfin.androidtv.ui.itemhandling.BaseRowItem
 import org.jellyfin.androidtv.ui.itemhandling.BaseRowType
 import org.jellyfin.androidtv.ui.itemhandling.GridButtonBaseRowItem
 import org.jellyfin.androidtv.util.ImageHelper
+import org.jellyfin.androidtv.util.PerformanceProfile
 import org.jellyfin.androidtv.util.apiclient.JellyfinImage
 import org.jellyfin.androidtv.util.apiclient.getUrl
 import org.jellyfin.androidtv.util.getActivity
@@ -53,6 +54,7 @@ import org.jellyfin.design.Tokens
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.model.api.BaseItemKind
 import org.koin.compose.koinInject
+import kotlin.time.Duration
 
 class CardPresenter(
 	val showInfo: Boolean,
@@ -64,8 +66,20 @@ class CardPresenter(
 	constructor(showInfo: Boolean, staticHeight: Int) : this(showInfo, ImageType.POSTER, staticHeight)
 	constructor(showInfo: Boolean) : this(showInfo, 150)
 	constructor() : this(true)
+	private val lowPerformancePresenter by lazy {
+		LowPerformanceCardPresenter(
+			showInfo = showInfo,
+			imageType = imageType,
+			staticHeight = staticHeight,
+			uniformAspect = uniformAspect,
+		)
+	}
 
 	override fun onCreateViewHolder(parent: ViewGroup): ViewHolder {
+		if (PerformanceProfile.isLowPerformanceDevice(parent.context)) {
+			return lowPerformancePresenter.onCreateViewHolder(parent)
+		}
+
 		val view = ComposeView(parent.context).apply {
 			setParentCompositionContext(parent.findViewTreeCompositionContext())
 			setViewTreeLifecycleOwner(parent.findViewTreeLifecycleOwner())
@@ -82,27 +96,30 @@ class CardPresenter(
 	}
 
 	override fun onBindViewHolder(viewHolder: ViewHolder, item: Any?) {
-		if (viewHolder !is CardViewHolder) return
+		if (viewHolder !is CardViewHolder) {
+			lowPerformancePresenter.onBindViewHolder(viewHolder, item)
+			return
+		}
 		if (item !is BaseRowItem) return
 
 		viewHolder.bind(item)
 	}
 
 	override fun onUnbindViewHolder(viewHolder: ViewHolder) {
-		if (viewHolder !is CardViewHolder) return
+		if (viewHolder !is CardViewHolder) {
+			lowPerformancePresenter.onUnbindViewHolder(viewHolder)
+			return
+		}
 
 		viewHolder.unbind()
 	}
 
 	private inner class CardViewHolder(composeView: ComposeView) : ViewHolder(composeView) {
-		private val _item = MutableStateFlow<BaseRowItem?>(null)
-		private val _focused = MutableStateFlow(false)
+		private var item by mutableStateOf<BaseRowItem?>(null)
+		private var focused by mutableStateOf(false)
 
 		init {
 			composeView.setContent {
-				val item by _item.collectAsState()
-				val focused by _focused.collectAsState()
-
 				CardViewHolderContent(
 					item = item,
 					focused = focused,
@@ -113,18 +130,18 @@ class CardPresenter(
 				)
 			}
 
-			_focused.value = view.isFocused
-			composeView.onFocusChangeListener = { _, focused -> _focused.value = focused }
+			focused = view.isFocused
+			composeView.onFocusChangeListener = { _, hasFocus -> focused = hasFocus }
 		}
 
 		fun bind(item: BaseRowItem) {
-			_item.value = item
-			_focused.value = view.isFocused
+			this.item = item
+			focused = view.isFocused
 		}
 
 		fun unbind() {
-			_item.value = null
-			_focused.value = false
+			item = null
+			focused = false
 		}
 	}
 }
@@ -289,8 +306,13 @@ private fun CardViewHolderContent(
 	val context = LocalContext.current
 	val localDensity = LocalDensity.current
 
-	val title = remember(item, context) { item?.getCardName(context) }
-	val subtitle = remember(item, context) { item?.getSubText(context) }
+	val episodeNumber = remember(item, imageType, showInfo) {
+		(item as? BaseItemDtoBaseRowItem)
+			?.takeIf { showInfo && imageType == ImageType.THUMB && it.staticHeight }
+			?.getEpisodeNumberLabel()
+	}
+	val title = remember(item, context, episodeNumber) { episodeNumber ?: item?.getCardName(context) }
+	val subtitle = remember(item, context, episodeNumber) { if (episodeNumber == null) item?.getSubText(context) else null }
 	val displayConfig = remember(item, imageType, uniformAspect) { item?.getDisplayConfig(imageType, uniformAspect) }
 	if (item == null || displayConfig == null) return
 
@@ -320,6 +342,7 @@ private fun CardViewHolderContent(
 						blurHash = image.blurHash,
 						aspectRatio = aspectRatio,
 						scaleType = displayConfig.scaleType ?: ImageView.ScaleType.CENTER_CROP,
+						crossFadeDuration = Duration.ZERO,
 						modifier = Modifier
 							.fillMaxSize()
 					)

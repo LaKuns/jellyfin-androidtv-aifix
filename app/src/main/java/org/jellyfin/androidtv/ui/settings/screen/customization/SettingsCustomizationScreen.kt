@@ -45,6 +45,17 @@ fun SettingsCustomizationScreen() {
 		}
 
 		item {
+			var performanceMode by rememberPreference(userPreferences, UserPreferences.performanceMode)
+
+			ListButton(
+				headingContent = { Text(stringResource(R.string.performance_mode_title)) },
+				captionContent = { Text(stringResource(performanceMode.nameRes)) },
+				onClick = { router.push(Routes.CUSTOMIZATION_PERFORMANCE) },
+				modifier = Modifier.focusKey(Routes.CUSTOMIZATION_PERFORMANCE),
+			)
+		}
+
+		item {
 			var clockBehavior by rememberPreference(userPreferences, UserPreferences.clockBehavior)
 
 			ListButton(

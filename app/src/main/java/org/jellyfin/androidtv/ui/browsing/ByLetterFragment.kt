@@ -20,7 +20,7 @@ class ByLetterFragment : BrowseFolderFragment() {
 			includeItemTypes = includeType?.let(BaseItemKind::fromNameOrNull)?.let(::setOf),
 			nameLessThan = letters.substring(0, 1),
 			recursive = true,
-			fields = ItemRepository.itemFields,
+			fields = ItemRepository.cardFields,
 		)
 
 		rows.add(BrowseRowDef("#", numbersItemsRequest, 40))
@@ -33,7 +33,7 @@ class ByLetterFragment : BrowseFolderFragment() {
 				includeItemTypes = includeType?.let(BaseItemKind::fromNameOrNull)?.let(::setOf),
 				nameStartsWith = letter.toString(),
 				recursive = true,
-				fields = ItemRepository.itemFields,
+				fields = ItemRepository.cardFields,
 			)
 
 			rows.add(BrowseRowDef(letter.toString(), letterItemsRequest, 40))

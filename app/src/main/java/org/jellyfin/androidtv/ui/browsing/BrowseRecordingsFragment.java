@@ -2,6 +2,7 @@ package org.jellyfin.androidtv.ui.browsing;
 
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.Looper;
 import android.view.View;
 
 import androidx.annotation.NonNull;
@@ -27,6 +28,14 @@ import java.util.List;
 import timber.log.Timber;
 
 public class BrowseRecordingsFragment extends EnhancedBrowseFragment {
+    private final Handler recordingsHandler = new Handler(Looper.getMainLooper());
+
+    @Override
+    public void onDestroyView() {
+        recordingsHandler.removeCallbacksAndMessages(null);
+        super.onDestroyView();
+    }
+
     @Override
     public void onResume() {
         super.onResume();
@@ -76,10 +85,11 @@ public class BrowseRecordingsFragment extends EnhancedBrowseFragment {
             }
             if (!nearTimers.isEmpty()) {
                 ItemRowAdapter scheduledAdapter = new ItemRowAdapter(requireContext(), nearTimers, mCardPresenter, mRowsAdapter, true);
+                scheduledAdapter.setRetrieveLifecycleOwner(this);
                 scheduledAdapter.Retrieve();
                 ListRow scheduleRow = new ListRow(new HeaderItem(getString(R.string.scheduled_in_next_24_hours)), scheduledAdapter);
                 mRowsAdapter.add(0, scheduleRow);
-                new Handler().postDelayed(new Runnable() {
+                recordingsHandler.postDelayed(new Runnable() {
                     @Override
                     public void run() {
                         if (!getLifecycle().getCurrentState().isAtLeast(Lifecycle.State.STARTED))

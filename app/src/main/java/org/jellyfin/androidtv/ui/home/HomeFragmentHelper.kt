@@ -7,6 +7,7 @@ import org.jellyfin.androidtv.constant.ChangeTriggerType
 import org.jellyfin.androidtv.data.repository.ItemRepository
 import org.jellyfin.androidtv.preference.UserPreferences
 import org.jellyfin.androidtv.ui.browsing.BrowseRowDef
+import org.jellyfin.androidtv.util.PerformanceProfile
 import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.BaseItemKind
 import org.jellyfin.sdk.model.api.MediaType
@@ -21,13 +22,15 @@ class HomeFragmentHelper(
 	private val userRepository: UserRepository,
 	private val userPreferences: UserPreferences,
 ) {
+	private val lowPerformanceDevice = PerformanceProfile.isLowPerformanceDevice(context)
+
 	fun loadRecentlyAdded(userViews: Collection<BaseItemDto>): HomeFragmentRow {
 		return HomeFragmentLatestRow(userRepository, userViews)
 	}
 
 	fun loadResume(title: String, includeMediaTypes: Collection<MediaType>): HomeFragmentRow {
 		val query = GetResumeItemsRequest(
-			limit = ITEM_LIMIT_RESUME,
+			limit = if (lowPerformanceDevice) LOW_PERFORMANCE_ITEM_LIMIT_RESUME else ITEM_LIMIT_RESUME,
 			fields = ItemRepository.browseFields,
 			imageTypeLimit = 1,
 			enableTotalRecordCount = false,
@@ -48,9 +51,9 @@ class HomeFragmentHelper(
 
 	fun loadLatestLiveTvRecordings(): HomeFragmentRow {
 		val query = GetRecordingsRequest(
-			fields = ItemRepository.itemFields,
+			fields = ItemRepository.browseFields,
 			enableImages = true,
-			limit = ITEM_LIMIT_RECORDINGS
+			limit = if (lowPerformanceDevice) LOW_PERFORMANCE_ITEM_LIMIT_RECORDINGS else ITEM_LIMIT_RECORDINGS
 		)
 
 		return HomeFragmentBrowseRowDefRow(BrowseRowDef(context.getString(R.string.lbl_recordings), query))
@@ -62,7 +65,7 @@ class HomeFragmentHelper(
 
 		val query = GetNextUpRequest(
 			imageTypeLimit = 1,
-			limit = ITEM_LIMIT_NEXT_UP,
+			limit = if (lowPerformanceDevice) LOW_PERFORMANCE_ITEM_LIMIT_NEXT_UP else ITEM_LIMIT_NEXT_UP,
 			enableResumable = false,
 			fields = ItemRepository.browseFields,
 			nextUpDateCutoff = nextUpDateCutoff,
@@ -74,10 +77,10 @@ class HomeFragmentHelper(
 	fun loadOnNow(): HomeFragmentRow {
 		val query = GetRecommendedProgramsRequest(
 			isAiring = true,
-			fields = ItemRepository.itemFields,
+			fields = ItemRepository.browseFields,
 			imageTypeLimit = 1,
 			enableTotalRecordCount = false,
-			limit = ITEM_LIMIT_ON_NOW
+			limit = if (lowPerformanceDevice) LOW_PERFORMANCE_ITEM_LIMIT_ON_NOW else ITEM_LIMIT_ON_NOW
 		)
 
 		return HomeFragmentBrowseRowDefRow(BrowseRowDef(context.getString(R.string.lbl_on_now), query))
@@ -89,5 +92,10 @@ class HomeFragmentHelper(
 		private const val ITEM_LIMIT_RECORDINGS = 40
 		private const val ITEM_LIMIT_NEXT_UP = 50
 		private const val ITEM_LIMIT_ON_NOW = 20
+
+		private const val LOW_PERFORMANCE_ITEM_LIMIT_RESUME = 25
+		private const val LOW_PERFORMANCE_ITEM_LIMIT_RECORDINGS = 20
+		private const val LOW_PERFORMANCE_ITEM_LIMIT_NEXT_UP = 25
+		private const val LOW_PERFORMANCE_ITEM_LIMIT_ON_NOW = 12
 	}
 }

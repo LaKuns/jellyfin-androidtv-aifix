@@ -4,6 +4,7 @@ import static org.koin.java.KoinJavaComponent.inject;
 
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.Looper;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -18,6 +19,7 @@ import androidx.fragment.app.Fragment;
 import androidx.leanback.app.RowsSupportFragment;
 import androidx.leanback.widget.ArrayObjectAdapter;
 import androidx.leanback.widget.ClassPresenterSelector;
+import androidx.leanback.widget.FocusHighlight;
 import androidx.leanback.widget.HeaderItem;
 import androidx.leanback.widget.ListRow;
 import androidx.leanback.widget.OnItemViewClickedListener;
@@ -39,6 +41,7 @@ import org.jellyfin.androidtv.data.repository.CustomMessageRepository;
 import org.jellyfin.androidtv.data.service.BackgroundService;
 import org.jellyfin.androidtv.databinding.EnhancedDetailBrowseBinding;
 import org.jellyfin.androidtv.ui.GridButton;
+import org.jellyfin.androidtv.ui.itemhandling.BaseItemDtoBaseRowItem;
 import org.jellyfin.androidtv.ui.itemhandling.BaseRowItem;
 import org.jellyfin.androidtv.ui.itemhandling.GridButtonBaseRowItem;
 import org.jellyfin.androidtv.ui.itemhandling.ItemLauncher;
@@ -55,6 +58,7 @@ import org.jellyfin.androidtv.util.CoroutineUtils;
 import org.jellyfin.androidtv.util.InfoLayoutHelper;
 import org.jellyfin.androidtv.util.KeyProcessor;
 import org.jellyfin.androidtv.util.MarkdownRenderer;
+import org.jellyfin.androidtv.util.PerformanceProfile;
 import org.jellyfin.androidtv.util.sdk.compat.JavaCompat;
 import org.jellyfin.sdk.api.client.ApiClient;
 import org.jellyfin.sdk.model.api.BaseItemDto;
@@ -68,6 +72,8 @@ import kotlin.Lazy;
 import kotlinx.serialization.json.Json;
 
 public class EnhancedBrowseFragment extends Fragment implements RowLoader, View.OnKeyListener {
+    private static final long LOW_PERFORMANCE_SELECTION_DELAY_MS = 180;
+
     protected TextView mTitle;
     private LinearLayout mInfoRow;
     private TextView mSummary;
@@ -98,6 +104,15 @@ public class EnhancedBrowseFragment extends Fragment implements RowLoader, View.
     protected BaseRowItem mCurrentItem;
     protected ListRow mCurrentRow;
 
+    private final Handler selectionHandler = new Handler(Looper.getMainLooper());
+    private final Handler refreshHandler = new Handler(Looper.getMainLooper());
+    private Runnable delayedRefreshRunnable;
+    private boolean lowPerformanceDevice;
+    private final Runnable applyPendingSelection = () -> {
+        if (!getLifecycle().getCurrentState().isAtLeast(Lifecycle.State.STARTED)) return;
+        if (mCurrentItem != null) applySelectionDetails(mCurrentItem);
+    };
+
     private Lazy<BackgroundService> backgroundService = inject(BackgroundService.class);
     private Lazy<MarkdownRenderer> markdownRenderer = inject(MarkdownRenderer.class);
     private final Lazy<CustomMessageRepository> customMessageRepository = inject(CustomMessageRepository.class);
@@ -111,7 +126,12 @@ public class EnhancedBrowseFragment extends Fragment implements RowLoader, View.
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        mRowsAdapter = new MutableObjectAdapter<Row>(new PositionableListRowPresenter());
+        lowPerformanceDevice = PerformanceProfile.isLowPerformanceDevice(requireContext());
+
+        mRowsAdapter = new MutableObjectAdapter<Row>(new PositionableListRowPresenter(
+                null,
+                lowPerformanceDevice ? FocusHighlight.ZOOM_FACTOR_NONE : FocusHighlight.ZOOM_FACTOR_MEDIUM
+        ));
 
         setupViews();
         setupQueries(this);
@@ -147,13 +167,31 @@ public class EnhancedBrowseFragment extends Fragment implements RowLoader, View.
         super.onViewCreated(view, savedInstanceState);
 
         setupEventListeners();
+        if (isSeasonFolder()) backgroundService.getValue().setBackground(mFolder);
     }
 
     @Override
     public void onDestroyView() {
+        selectionHandler.removeCallbacks(applyPendingSelection);
+        refreshHandler.removeCallbacksAndMessages(null);
+        cancelRowRetrievals();
         super.onDestroyView();
         mClickedListener.removeListeners();
         mSelectedListener.removeListeners();
+    }
+
+    private void cancelRowRetrievals() {
+        if (mRowsAdapter == null) return;
+
+        for (int i = 0; i < mRowsAdapter.size(); i++) {
+            Object value = mRowsAdapter.get(i);
+            if (!(value instanceof ListRow)) continue;
+
+            Object rowAdapter = ((ListRow) value).getAdapter();
+            if (rowAdapter instanceof ItemRowAdapter) {
+                ItemRowAdapterHelperKt.cancelRetrieval((ItemRowAdapter) rowAdapter);
+            }
+        }
     }
 
     protected void setupQueries(RowLoader rowLoader) {
@@ -202,7 +240,8 @@ public class EnhancedBrowseFragment extends Fragment implements RowLoader, View.
             // Re-retrieve anything that needs it but delay slightly so we don't take away gui landing
             if (mRowsAdapter != null) {
                 refreshCurrentItem();
-                new Handler().postDelayed(new Runnable() {
+                if (delayedRefreshRunnable != null) refreshHandler.removeCallbacks(delayedRefreshRunnable);
+                delayedRefreshRunnable = new Runnable() {
                     @Override
                     public void run() {
                         if (!getLifecycle().getCurrentState().isAtLeast(Lifecycle.State.STARTED))
@@ -216,7 +255,8 @@ public class EnhancedBrowseFragment extends Fragment implements RowLoader, View.
                             }
                         }
                     }
-                }, 1500);
+                };
+                refreshHandler.postDelayed(delayedRefreshRunnable, 1500);
             }
         } else {
             justLoaded = false;
@@ -224,8 +264,14 @@ public class EnhancedBrowseFragment extends Fragment implements RowLoader, View.
     }
 
     public void loadRows(List<BrowseRowDef> rows) {
-        mRowsAdapter = new MutableObjectAdapter<Row>(new PositionableListRowPresenter());
-        mCardPresenter = new CardPresenter(false, 140);
+        cancelRowRetrievals();
+        mRowsAdapter = new MutableObjectAdapter<Row>(new PositionableListRowPresenter(
+                null,
+                lowPerformanceDevice ? FocusHighlight.ZOOM_FACTOR_NONE : FocusHighlight.ZOOM_FACTOR_MEDIUM
+        ));
+        mCardPresenter = isSeasonFolder()
+                ? new CardPresenter(true, ImageType.THUMB, 120)
+                : new CardPresenter(false, 140);
         ClassPresenterSelector ps = new ClassPresenterSelector();
         ps.addClassPresenter(GridButtonBaseRowItem.class, new GridButtonPresenter(155, 140));
         ps.addClassPresenter(BaseRowItem.class, mCardPresenter);
@@ -272,6 +318,7 @@ public class EnhancedBrowseFragment extends Fragment implements RowLoader, View.
                     break;
             }
 
+            rowAdapter.setRetrieveLifecycleOwner(this);
             rowAdapter.setReRetrieveTriggers(def.getChangeTriggers());
 
             ListRow row = new ListRow(header, rowAdapter);
@@ -460,14 +507,20 @@ public class EnhancedBrowseFragment extends Fragment implements RowLoader, View.
         @Override
         public void onItemSelected(Presenter.ViewHolder itemViewHolder, Object item,
                                    RowPresenter.ViewHolder rowViewHolder, Row row) {
+            selectionHandler.removeCallbacks(applyPendingSelection);
             if (!(item instanceof BaseRowItem)) {
                 mTitle.setText(mFolder != null ? mFolder.getName() : "");
-                mInfoRow.removeAllViews();
+                if (lowPerformanceDevice) {
+                    InfoLayoutHelper.addLowPerformanceInfoRow(requireContext(), null, mInfoRow, true);
+                } else {
+                    InfoLayoutHelper.addInfoRow(requireContext(), null, mInfoRow, true);
+                }
                 mSummary.setText("");
                 mCurrentItem = null;
                 mCurrentRow = null;
                 // Fill in default background
-                backgroundService.getValue().clearBackgrounds();
+                if (isSeasonFolder()) backgroundService.getValue().setBackground(mFolder);
+                else backgroundService.getValue().clearBackgrounds();
                 return;
             }
 
@@ -475,21 +528,56 @@ public class EnhancedBrowseFragment extends Fragment implements RowLoader, View.
 
             mCurrentItem = rowItem;
             mCurrentRow = (ListRow) row;
-            mInfoRow.removeAllViews();
-
-            mTitle.setText(rowItem.getName(requireContext()));
-
-            String summary = rowItem.getSummary(requireContext());
-            if (summary != null)
-                mSummary.setText(markdownRenderer.getValue().toMarkdownSpanned(summary));
-            else mSummary.setText(null);
-
-            InfoLayoutHelper.addInfoRow(requireContext(), rowItem.getBaseItem(), mInfoRow, true);
+            mTitle.setText(getSelectionTitle(rowItem));
 
             ItemRowAdapter adapter = (ItemRowAdapter) ((ListRow) row).getAdapter();
             adapter.loadMoreItemsIfNeeded(adapter.indexOf(rowItem));
 
-            backgroundService.getValue().setBackground(rowItem.getBaseItem());
+            // Episode browsing and constrained devices commonly receive several focus
+            // changes in quick succession. Avoid parsing markdown, rebuilding the info
+            // row and starting a backdrop request for selections that are never shown.
+            if (lowPerformanceDevice || (mFolder != null && mFolder.getType() == BaseItemKind.SEASON)) {
+                selectionHandler.postDelayed(applyPendingSelection, LOW_PERFORMANCE_SELECTION_DELAY_MS);
+            } else {
+                applySelectionDetails(rowItem);
+            }
         }
+    }
+
+    private void applySelectionDetails(BaseRowItem rowItem) {
+        if (rowItem != mCurrentItem || mInfoRow == null || mSummary == null) return;
+
+        String summary = rowItem.getSummary(requireContext());
+        if (summary == null) {
+            mSummary.setText(null);
+        } else if (lowPerformanceDevice) {
+            // Episode summaries are normally plain text. Rendering them as
+            // markdown on every focus change is expensive on older CPUs.
+            mSummary.setText(summary);
+        } else {
+            mSummary.setText(markdownRenderer.getValue().toMarkdownSpanned(summary));
+        }
+
+        if (lowPerformanceDevice) {
+            InfoLayoutHelper.addLowPerformanceInfoRow(requireContext(), rowItem.getBaseItem(), mInfoRow, true);
+        } else {
+            InfoLayoutHelper.addInfoRow(requireContext(), rowItem.getBaseItem(), mInfoRow, true);
+        }
+        // Keep one stable series/season backdrop while browsing episodes. Besides
+        // reducing visual noise this avoids decoding a new fullscreen image for
+        // every D-pad movement.
+        if (!isSeasonFolder()) backgroundService.getValue().setSelectionBackground(rowItem.getBaseItem());
+    }
+
+    private boolean isSeasonFolder() {
+        return mFolder != null && mFolder.getType() == BaseItemKind.SEASON;
+    }
+
+    private String getSelectionTitle(BaseRowItem rowItem) {
+        if (isSeasonFolder() && rowItem instanceof BaseItemDtoBaseRowItem) {
+            String episodeNumber = ((BaseItemDtoBaseRowItem) rowItem).getEpisodeNumberLabel();
+            if (episodeNumber != null) return episodeNumber;
+        }
+        return rowItem.getName(requireContext());
     }
 }

@@ -9,6 +9,7 @@ import android.media.audiofx.DynamicsProcessing.Limiter;
 import android.media.audiofx.Equalizer;
 import android.net.Uri;
 import android.os.Handler;
+import android.os.SystemClock;
 import android.util.TypedValue;
 import android.view.View;
 import android.widget.FrameLayout;
@@ -51,9 +52,11 @@ import org.jellyfin.androidtv.data.compat.StreamInfo;
 import org.jellyfin.androidtv.preference.UserPreferences;
 import org.jellyfin.androidtv.preference.constant.BufferLength;
 import org.jellyfin.androidtv.preference.constant.ZoomMode;
+import org.jellyfin.androidtv.util.PerformanceProfile;
 import org.jellyfin.sdk.api.client.ApiClient;
 import org.jellyfin.sdk.model.api.MediaStream;
 import org.jellyfin.sdk.model.api.MediaStreamType;
+import org.jellyfin.sdk.model.api.PlayMethod;
 import org.jellyfin.sdk.model.api.SubtitleDeliveryMethod;
 import org.koin.java.KoinJavaComponent;
 
@@ -73,6 +76,12 @@ import timber.log.Timber;
 
 @OptIn(markerClass = UnstableApi.class)
 public class VideoManager {
+    private static final long PROGRESS_LOOP_INTERVAL_MS = 500L;
+    private static final long LOW_PERFORMANCE_PROGRESS_LOOP_INTERVAL_MS = 750L;
+    private static final long DIRECT_PLAY_STARTUP_TIMEOUT_MS = 20_000L;
+    private static final long DIRECT_STREAM_STARTUP_TIMEOUT_MS = 30_000L;
+    private static final long TRANSCODE_STARTUP_TIMEOUT_MS = 75_000L;
+
     private ZoomMode mZoomMode;
     private Activity mActivity;
     private Equalizer mEqualizer;
@@ -87,6 +96,11 @@ public class VideoManager {
     private long mMetaDuration = -1;
     private long lastExoPlayerPosition = -1;
     private boolean nightModeEnabled;
+    private PlayMethod currentPlayMethod = PlayMethod.DIRECT_PLAY;
+    private boolean playbackReady;
+    private Runnable startupBufferingTimeout;
+    private long mediaPrepareStartedAtMs = -1L;
+    private long firstBufferingStartedAtMs = -1L;
 
     public boolean isContracted = false;
 
@@ -141,7 +155,9 @@ public class VideoManager {
         mExoPlayer.addListener(new Player.Listener() {
             @Override
             public void onPlayerError(@NonNull PlaybackException error) {
-                Timber.e("***** Got error from player");
+                Timber.e(error, "Player failed during %s startup after %d ms (buffered=%d ms)",
+                        currentPlayMethod, startupElapsedMs(), mExoPlayer.getBufferedPosition());
+                cancelStartupBufferingTimeout();
                 if (mPlaybackControllerNotifiable != null) mPlaybackControllerNotifiable.onError();
                 stopProgressLoop();
             }
@@ -161,13 +177,30 @@ public class VideoManager {
             @Override
             public void onPlaybackStateChanged(int playbackState) {
                 if (playbackState == Player.STATE_BUFFERING) {
-                    Timber.d("Player is buffering");
+                    if (!playbackReady && firstBufferingStartedAtMs < 0) {
+                        firstBufferingStartedAtMs = SystemClock.elapsedRealtime();
+                    }
+                    Timber.d("Player is buffering using %s after %d ms (buffered=%d ms)",
+                            currentPlayMethod, startupElapsedMs(), mExoPlayer.getBufferedPosition());
+                    scheduleStartupBufferingTimeout();
+                } else if (playbackState == Player.STATE_READY) {
+                    playbackReady = true;
+                    Timber.i("Playback startup ready using %s in %d ms (initial buffering=%d ms)",
+                            currentPlayMethod,
+                            startupElapsedMs(),
+                            firstBufferingStartedAtMs < 0 ? 0L : SystemClock.elapsedRealtime() - firstBufferingStartedAtMs);
+                    cancelStartupBufferingTimeout();
                 }
 
                 if (playbackState == Player.STATE_ENDED) {
                     if (mPlaybackControllerNotifiable != null) mPlaybackControllerNotifiable.onCompletion();
                     stopProgressLoop();
                 }
+            }
+
+            @Override
+            public void onRenderedFirstFrame() {
+                Timber.i("Playback rendered first frame using %s in %d ms", currentPlayMethod, startupElapsedMs());
             }
 
             @Override
@@ -218,8 +251,12 @@ public class VideoManager {
      */
     private ExoPlayer.Builder configureExoplayerBuilder(Context context, AssHandler assHandler) {
         ExoPlayer.Builder exoPlayerBuilder = new ExoPlayer.Builder(context);
+        boolean lowPerformanceDevice = PerformanceProfile.isLowPerformanceDevice(context);
         DefaultRenderersFactory defaultRendererFactory = new DefaultRenderersFactory(context);
-        defaultRendererFactory.setEnableDecoderFallback(true);
+        // Software decoder fallback is useful on desktop-like devices, but on old TVs it
+        // usually turns a media incompatibility into permanent dropped frames. The device
+        // profile already asks the server to transcode those streams instead.
+        defaultRendererFactory.setEnableDecoderFallback(!lowPerformanceDevice);
         defaultRendererFactory.setExtensionRendererMode(determineExoPlayerExtensionRendererMode());
 
         DefaultTrackSelector trackSelector = new DefaultTrackSelector(context);
@@ -251,7 +288,16 @@ public class VideoManager {
 
         BufferLength bufferLength = userPreferences.get(UserPreferences.Companion.getBufferLength());
         DefaultLoadControl loadControl;
-        if (bufferLength == BufferLength.LARGE) {
+        if (lowPerformanceDevice) {
+            // Keep the allocator small enough for low-memory TV boxes. The server-side
+            // profile limits expensive media, so a short buffer is enough to absorb normal
+            // network jitter without holding tens of megabytes of compressed video.
+            loadControl = new DefaultLoadControl.Builder()
+                    .setBufferDurationsMs(10_000, 30_000, 1_500, 3_000)
+                    .setBackBuffer(0, false)
+                    .setPrioritizeTimeOverSizeThresholds(true)
+                    .build();
+        } else if (bufferLength == BufferLength.LARGE) {
             loadControl = new DefaultLoadControl.Builder()
                     .setBufferDurationsMs(50_000, 120_000, 2_500, 5_000)
                     .build();
@@ -336,19 +382,24 @@ public class VideoManager {
             return;
         }
         mExoPlayer.setPlayWhenReady(true);
+        scheduleStartupBufferingTimeout();
         normalWidth = mExoPlayerView.getLayoutParams().width;
         normalHeight = mExoPlayerView.getLayoutParams().height;
     }
 
     public void play() {
         mExoPlayer.setPlayWhenReady(true);
+        scheduleStartupBufferingTimeout();
     }
 
     public void pause() {
         mExoPlayer.setPlayWhenReady(false);
+        cancelStartupBufferingTimeout();
     }
 
     public void stopPlayback() {
+        cancelStartupBufferingTimeout();
+        playbackReady = false;
         if (mExoPlayer != null) {
             mExoPlayer.stop();
 
@@ -393,6 +444,11 @@ public class VideoManager {
             return;
         }
         Timber.i("Video path set to: %s", path);
+        currentPlayMethod = streamInfo.getPlayMethod();
+        playbackReady = false;
+        mediaPrepareStartedAtMs = SystemClock.elapsedRealtime();
+        firstBufferingStartedAtMs = -1L;
+        cancelStartupBufferingTimeout();
 
         try {
             // Add external subtitles
@@ -607,6 +663,7 @@ public class VideoManager {
     }
 
     private void releasePlayer() {
+        cancelStartupBufferingTimeout();
         _helper.setScreensaverLock(false);
         if (mExoPlayer != null) {
             mExoPlayerView.setPlayer(null);
@@ -659,11 +716,14 @@ public class VideoManager {
 
     private void startProgressLoop() {
         stopProgressLoop();
+        final long interval = PerformanceProfile.isLowPerformanceDevice(mActivity)
+                ? LOW_PERFORMANCE_PROGRESS_LOOP_INTERVAL_MS
+                : PROGRESS_LOOP_INTERVAL_MS;
         progressLoop = new Runnable() {
             @Override
             public void run() {
                 if (mPlaybackControllerNotifiable != null) mPlaybackControllerNotifiable.onProgress();
-                mHandler.postDelayed(this, 500);
+                mHandler.postDelayed(this, interval);
             }
         };
         mHandler.post(progressLoop);
@@ -673,5 +733,43 @@ public class VideoManager {
         if (progressLoop != null) {
             mHandler.removeCallbacks(progressLoop);
         }
+    }
+
+    private void scheduleStartupBufferingTimeout() {
+        if (mExoPlayer == null || playbackReady || !mExoPlayer.getPlayWhenReady()
+                || startupBufferingTimeout != null) {
+            return;
+        }
+
+        long timeout = currentPlayMethod == PlayMethod.DIRECT_PLAY
+                ? DIRECT_PLAY_STARTUP_TIMEOUT_MS
+                : currentPlayMethod == PlayMethod.DIRECT_STREAM
+                ? DIRECT_STREAM_STARTUP_TIMEOUT_MS
+                : TRANSCODE_STARTUP_TIMEOUT_MS;
+
+        startupBufferingTimeout = () -> {
+            startupBufferingTimeout = null;
+            if (mExoPlayer == null || playbackReady || !mExoPlayer.getPlayWhenReady()
+                    || mExoPlayer.getPlaybackState() != Player.STATE_BUFFERING) {
+                return;
+            }
+
+            Timber.w("Playback startup timed out after %d ms using %s (buffered=%d ms, position=%d ms); retrying with a safer stream",
+                    startupElapsedMs(), currentPlayMethod, mExoPlayer.getBufferedPosition(), mExoPlayer.getCurrentPosition());
+            stopProgressLoop();
+            if (mPlaybackControllerNotifiable != null) mPlaybackControllerNotifiable.onError();
+        };
+        mHandler.postDelayed(startupBufferingTimeout, timeout);
+    }
+
+    private void cancelStartupBufferingTimeout() {
+        if (startupBufferingTimeout != null) {
+            mHandler.removeCallbacks(startupBufferingTimeout);
+            startupBufferingTimeout = null;
+        }
+    }
+
+    private long startupElapsedMs() {
+        return mediaPrepareStartedAtMs < 0 ? 0L : SystemClock.elapsedRealtime() - mediaPrepareStartedAtMs;
     }
 }

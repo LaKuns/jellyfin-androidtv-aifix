@@ -400,6 +400,16 @@
     <string name="pref_behavior">行为</string>
     <string name="pref_accounts">账户</string>
     <string name="pref_customization">自定义</string>
+    <string name="performance_mode_title">性能模式</string>
+    <string name="performance_mode_description">在旧电视上减少界面效果和后台工作</string>
+    <string name="performance_mode_auto">自动</string>
+    <string name="performance_mode_low">低资源占用</string>
+    <string name="performance_mode_full">完整视觉效果</string>
+    <string name="playback_strategy_title">播放策略</string>
+    <string name="playback_strategy_description">选择本地解码或服务器转码</string>
+    <string name="playback_strategy_auto">自动</string>
+    <string name="playback_strategy_direct">优先直接播放</string>
+    <string name="playback_strategy_server">优先服务器转码</string>
     <string name="sort_accounts_by">按帐户排序</string>
     <string name="home_section_resume_book">继续阅读</string>
     <string name="lbl_shuffle_queue">切换随机播放</string>

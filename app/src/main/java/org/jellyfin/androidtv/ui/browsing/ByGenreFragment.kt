@@ -32,7 +32,7 @@ class ByGenreFragment : BrowseFolderFragment() {
 				includeItemTypes = includeType?.let(BaseItemKind::fromNameOrNull)?.let(::setOf),
 				genres = setOf(genre.name.orEmpty()),
 				recursive = true,
-				fields = ItemRepository.itemFields,
+				fields = ItemRepository.cardFields,
 			)
 			rows.add(BrowseRowDef(genre.name, itemsRequest, 40))
 		}

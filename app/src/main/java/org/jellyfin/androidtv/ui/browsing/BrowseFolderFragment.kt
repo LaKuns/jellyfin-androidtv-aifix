@@ -2,6 +2,7 @@ package org.jellyfin.androidtv.ui.browsing
 
 import android.os.Bundle
 import androidx.leanback.app.BrowseSupportFragment
+import androidx.leanback.widget.FocusHighlight
 import androidx.leanback.widget.HeaderItem
 import androidx.leanback.widget.ListRow
 import androidx.leanback.widget.OnItemViewClickedListener
@@ -19,9 +20,11 @@ import org.jellyfin.androidtv.data.service.BackgroundService
 import org.jellyfin.androidtv.ui.itemhandling.BaseRowItem
 import org.jellyfin.androidtv.ui.itemhandling.ItemLauncher
 import org.jellyfin.androidtv.ui.itemhandling.ItemRowAdapter
+import org.jellyfin.androidtv.ui.itemhandling.cancelRetrieval
 import org.jellyfin.androidtv.ui.presentation.CardPresenter
 import org.jellyfin.androidtv.ui.presentation.MutableObjectAdapter
 import org.jellyfin.androidtv.ui.presentation.PositionableListRowPresenter
+import org.jellyfin.androidtv.util.PerformanceProfile
 import org.jellyfin.sdk.model.api.BaseItemDto
 import org.koin.android.ext.android.inject
 
@@ -62,7 +65,7 @@ abstract class BrowseFolderFragment : BrowseSupportFragment(), RowLoader {
 				val adapter = (row as? ListRow)?.adapter
 				if (adapter is ItemRowAdapter) adapter.loadMoreItemsIfNeeded(adapter.indexOf(item))
 
-				backgroundService.setBackground(item.baseItem)
+				backgroundService.setSelectionBackground(item.baseItem)
 			}
 		}
 
@@ -74,10 +77,26 @@ abstract class BrowseFolderFragment : BrowseSupportFragment(), RowLoader {
 		}
 	}
 
+	override fun onDestroyView() {
+		cancelRowRetrievals()
+		super.onDestroyView()
+	}
+
+	private fun cancelRowRetrievals() {
+		(adapter as? MutableObjectAdapter<Row>)
+			?.mapNotNull { row -> (row as? ListRow)?.adapter as? ItemRowAdapter }
+			?.forEach { it.cancelRetrieval() }
+	}
+
 	protected abstract suspend fun setupQueries(rowLoader: RowLoader)
 
 	override fun loadRows(rows: MutableList<BrowseRowDef>) {
-		val mutableAdapter = MutableObjectAdapter<Row>(PositionableListRowPresenter()).also {
+		cancelRowRetrievals()
+		val lowPerformanceDevice = PerformanceProfile.isLowPerformanceDevice(requireContext())
+		val mutableAdapter = MutableObjectAdapter<Row>(PositionableListRowPresenter(
+			null,
+			if (lowPerformanceDevice) FocusHighlight.ZOOM_FACTOR_NONE else FocusHighlight.ZOOM_FACTOR_MEDIUM,
+		)).also {
 			adapter = it
 		}
 
@@ -94,6 +113,7 @@ abstract class BrowseFolderFragment : BrowseSupportFragment(), RowLoader {
 				mutableAdapter,
 				def.queryType
 			).apply {
+				setRetrieveLifecycleOwner(this@BrowseFolderFragment)
 				val row = ListRow(HeaderItem(def.headerText), this)
 				setReRetrieveTriggers(def.changeTriggers)
 				setRow(row)

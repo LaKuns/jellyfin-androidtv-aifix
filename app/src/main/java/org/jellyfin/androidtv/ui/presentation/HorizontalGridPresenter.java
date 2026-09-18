@@ -181,10 +181,14 @@ public class HorizontalGridPresenter extends Presenter {
         vh.getGridView().setNumRows(mNumRows);
         vh.mInitialized = true;
 
-        vh.mItemBridgeAdapter.setWrapper(mWrapper);
         if (needsDefaultShadow() || areChildRoundedCornersEnabled()) {
+            vh.mItemBridgeAdapter.setWrapper(mWrapper);
             ShadowOverlayContainer.prepareParentForShadow(vh.getGridView());
             ((ViewGroup) vh.view).setClipChildren(false);
+        } else {
+            // Avoid an extra ShadowOverlayContainer for every card when both
+            // effects are disabled on constrained devices.
+            vh.mItemBridgeAdapter.setWrapper(null);
         }
         vh.getGridView().setFocusDrawingOrderEnabled(!isUsingZOrder());
         FocusHighlightHelper.setupBrowseItemFocusHighlight(vh.mItemBridgeAdapter,
@@ -295,4 +299,3 @@ public class HorizontalGridPresenter extends Presenter {
         }
     }
 }
-

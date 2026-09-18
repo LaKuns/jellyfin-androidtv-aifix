@@ -24,6 +24,7 @@ class SearchRepositoryImpl(
 ) : SearchRepository {
 	companion object {
 		private const val QUERY_LIMIT = 25
+		private const val MAX_BATCH_QUERY_LIMIT = 100
 	}
 
 	override suspend fun search(
@@ -32,10 +33,12 @@ class SearchRepositoryImpl(
 	): Result<List<BaseItemDto>> = try {
 		var request = GetItemsRequest(
 			searchTerm = searchTerm,
-			limit = QUERY_LIMIT,
+			// Batched searches still reserve roughly one row of results per type.
+			// The client splits the response back into the original UI groups.
+			limit = (QUERY_LIMIT * itemTypes.size).coerceAtMost(MAX_BATCH_QUERY_LIMIT),
 			imageTypeLimit = 1,
 			includeItemTypes = itemTypes,
-			fields = ItemRepository.itemFields,
+			fields = ItemRepository.cardFields,
 			recursive = true,
 			enableTotalRecordCount = false,
 		)

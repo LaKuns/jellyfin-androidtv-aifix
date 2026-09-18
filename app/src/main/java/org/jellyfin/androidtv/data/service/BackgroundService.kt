@@ -9,13 +9,18 @@ import coil3.toBitmap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.jellyfin.androidtv.auth.model.Server
 import org.jellyfin.androidtv.preference.UserPreferences
 import org.jellyfin.androidtv.preference.constant.BackdropBehavior
+import org.jellyfin.androidtv.util.PerformanceProfile
 import org.jellyfin.androidtv.util.apiclient.getUrl
 import org.jellyfin.androidtv.util.apiclient.itemBackdropImages
 import org.jellyfin.androidtv.util.apiclient.parentBackdropImages
@@ -36,15 +41,35 @@ class BackgroundService(
 	private val imageLoader: ImageLoader,
 ) {
 	companion object {
+		private const val MAX_BACKGROUND_WIDTH = 1920
+		private const val MAX_BACKGROUND_HEIGHT = 1080
+		private const val MAX_LOW_PERFORMANCE_BACKGROUND_WIDTH = 1280
+		private const val MAX_LOW_PERFORMANCE_BACKGROUND_HEIGHT = 720
+		private const val MAX_BACKGROUND_COUNT = 2
+		private const val MAX_LOW_PERFORMANCE_BACKGROUND_COUNT = 1
+
+		val BACKGROUND_SELECTION_DELAY = 250.milliseconds
 		val SLIDESHOW_DURATION = 30.seconds
 		val TRANSITION_DURATION = 800.milliseconds
 	}
 
 	// Async
 	private val scope = MainScope()
+	private val lowPerformanceDevice = PerformanceProfile.isLowPerformanceDevice(context)
+	private val maxBackgroundCount = if (lowPerformanceDevice) MAX_LOW_PERFORMANCE_BACKGROUND_COUNT else MAX_BACKGROUND_COUNT
+	private val backgroundSize by lazy {
+		val metrics = context.resources.displayMetrics
+		val maxWidth = if (lowPerformanceDevice) MAX_LOW_PERFORMANCE_BACKGROUND_WIDTH else MAX_BACKGROUND_WIDTH
+		val maxHeight = if (lowPerformanceDevice) MAX_LOW_PERFORMANCE_BACKGROUND_HEIGHT else MAX_BACKGROUND_HEIGHT
+		val width = metrics.widthPixels.coerceAtLeast(1).coerceAtMost(maxWidth)
+		val height = metrics.heightPixels.coerceAtLeast(1).coerceAtMost(maxHeight)
+		width to height
+	}
+	private var pendingBackgroundJob: Job? = null
 	private var loadBackgroundsJob: Job? = null
 	private var updateBackgroundTimerJob: Job? = null
 	private var lastBackgroundTimerUpdate = 0L
+	private var requestedBackgroundUrls: Set<String>? = null
 
 	// Current background data
 	private var _backgrounds = emptyList<ImageBitmap>()
@@ -67,14 +92,35 @@ class BackgroundService(
 			return clearBackgrounds()
 
 		// Enable blur for backdrops
-		_blurBackground.value = backdropBehavior == BackdropBehavior.BACKDROP_WITH_BLUR
+		_blurBackground.value = backdropBehavior == BackdropBehavior.BACKDROP_WITH_BLUR && !lowPerformanceDevice
 
-		// Get all backdrop urls
+		// Ask the server for screen-sized images. Loading original/4K backdrops here
+		// is particularly expensive because they are kept as ImageBitmaps.
+		val (width, height) = backgroundSize
 		val backdropUrls = (baseItem.itemBackdropImages + baseItem.parentBackdropImages)
-			.map { it.getUrl(api) }
+			.asSequence()
+			.map { it.getUrl(api, fillWidth = width, fillHeight = height) }
+			.distinct()
+			.take(maxBackgroundCount)
 			.toSet()
 
-		loadBackgrounds(backdropUrls)
+		if (backdropUrls.isEmpty()) clearBackgrounds()
+		else requestBackgrounds(backdropUrls)
+	}
+
+	/**
+	 * Update a backdrop in response to focus movement. Fullscreen image decoding is
+	 * intentionally disabled for this high-frequency path on constrained devices;
+	 * explicit screen and detail backdrops can still use [setBackground].
+	 */
+	fun setSelectionBackground(baseItem: BaseItemDto?) {
+		if (lowPerformanceDevice) {
+			// Remove a backdrop left by the previous screen once, then keep focus
+			// movement allocation-free while browsing.
+			if (requestedBackgroundUrls != null || _currentBackground.value != null) clearBackgrounds()
+			return
+		}
+		setBackground(baseItem)
 	}
 
 	/**
@@ -96,7 +142,27 @@ class BackgroundService(
 		val api = jellyfin.createApi(baseUrl = server.address)
 		val splashscreenUrl = api.imageApi.getSplashscreenUrl()
 
-		loadBackgrounds(setOf(splashscreenUrl))
+		requestBackgrounds(setOf(splashscreenUrl), delayed = false)
+	}
+
+	private fun requestBackgrounds(backdropUrls: Set<String>, delayed: Boolean = true) {
+		if (backdropUrls.isEmpty()) return clearBackgrounds()
+		if (backdropUrls == requestedBackgroundUrls) return
+		requestedBackgroundUrls = backdropUrls
+
+		pendingBackgroundJob?.cancel()
+		// Stop decoding the previous selection immediately; the new selection
+		// will only be started after the focus settles.
+		loadBackgroundsJob?.cancel()
+		if (!delayed) {
+			loadBackgrounds(backdropUrls)
+			return
+		}
+
+		pendingBackgroundJob = scope.launch {
+			delay(BACKGROUND_SELECTION_DELAY)
+			loadBackgrounds(backdropUrls)
+		}
 	}
 
 	private fun loadBackgrounds(backdropUrls: Set<String>) {
@@ -105,31 +171,53 @@ class BackgroundService(
 		// Re-enable backgrounds if disabled
 		_enabled.value = true
 
-		// Cancel current loading job
+		// Cancel current loading and slideshow jobs before releasing the old
+		// bitmaps. This prevents rapid focus changes from retaining several
+		// generations of fullscreen images at once.
 		loadBackgroundsJob?.cancel()
+		updateBackgroundTimerJob?.cancel()
+		_backgrounds = emptyList()
+		_currentBackground.value = null
+
+		val (width, height) = backgroundSize
 		loadBackgroundsJob = scope.launch(Dispatchers.IO) {
-			_backgrounds = backdropUrls.mapNotNull { url ->
+			val coroutineContext = currentCoroutineContext()
+			val loadedBackgrounds = backdropUrls.mapNotNull { url ->
+				coroutineContext.ensureActive()
 				imageLoader.execute(
-					request = ImageRequest.Builder(context).data(url).build()
+					request = ImageRequest.Builder(context)
+						.data(url)
+						.size(width, height)
+						.build()
 				).image?.toBitmap()?.asImageBitmap()
 			}
 
-			// Go to first background
-			_currentIndex = 0
-			update()
+			withContext(Dispatchers.Main.immediate) {
+				if (!currentCoroutineContext().isActive) return@withContext
+
+				_backgrounds = loadedBackgrounds
+
+				// Go to first background
+				_currentIndex = 0
+				update()
+			}
 		}
 	}
 
 	fun clearBackgrounds() {
+		pendingBackgroundJob?.cancel()
+		pendingBackgroundJob = null
+		requestedBackgroundUrls = null
 		loadBackgroundsJob?.cancel()
+		loadBackgroundsJob = null
+		updateBackgroundTimerJob?.cancel()
 
 		// Re-enable backgrounds if disabled
 		_enabled.value = true
 
-		if (_backgrounds.isEmpty()) return
-
 		_backgrounds = emptyList()
-		update()
+		_currentIndex = 0
+		_currentBackground.value = null
 	}
 
 	/**

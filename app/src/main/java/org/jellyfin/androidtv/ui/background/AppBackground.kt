@@ -21,6 +21,7 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -29,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
 import org.jellyfin.androidtv.R
 import org.jellyfin.androidtv.data.service.BackgroundService
+import org.jellyfin.androidtv.util.PerformanceProfile
 import org.koin.compose.koinInject
 
 @Composable
@@ -62,34 +64,52 @@ private fun AppThemeBackground() {
 
 @Composable
 fun AppBackground() {
+	val context = LocalContext.current
 	val backgroundService = koinInject<BackgroundService>()
 	val currentBackground by backgroundService.currentBackground.collectAsState()
 	val blurBackground by backgroundService.blurBackground.collectAsState()
 	val enabled by backgroundService.enabled.collectAsState()
+	val lowPerformanceDevice = remember(context) {
+		PerformanceProfile.isLowPerformanceDevice(context)
+	}
 
 	if (enabled) {
-		AnimatedContent(
-			targetState = currentBackground,
-			transitionSpec = {
-				val duration = (BackgroundService.TRANSITION_DURATION.inWholeMilliseconds / 2).toInt()
-				fadeIn(tween(durationMillis = duration)) togetherWith fadeOut(snap(delayMillis = duration))
-			},
-			label = "BackgroundTransition",
-		) { background ->
-			if (background != null) {
-				Image(
-					bitmap = background,
-					contentDescription = null,
-					alignment = Alignment.Center,
-					contentScale = ContentScale.Crop,
-					colorFilter = ColorFilter.tint(colorResource(R.color.background_filter), BlendMode.SrcAtop),
-					modifier = Modifier
-						.fillMaxSize()
-						.then(if (blurBackground) Modifier.blur(10.dp) else Modifier)
-				)
-			} else {
-				AppThemeBackground()
+		if (lowPerformanceDevice) {
+			// Avoid keeping two fullscreen bitmaps during AnimatedContent's
+			// transition. BackgroundService also disables blur on these devices.
+			BackgroundImage(currentBackground, blur = false)
+		} else {
+			AnimatedContent(
+				targetState = currentBackground,
+				transitionSpec = {
+					val duration = (BackgroundService.TRANSITION_DURATION.inWholeMilliseconds / 2).toInt()
+					fadeIn(tween(durationMillis = duration)) togetherWith fadeOut(snap(delayMillis = duration))
+				},
+				label = "BackgroundTransition",
+			) { background ->
+				BackgroundImage(background, blur = blurBackground)
 			}
 		}
+	}
+}
+
+@Composable
+private fun BackgroundImage(
+	background: ImageBitmap?,
+	blur: Boolean,
+) {
+	if (background != null) {
+		Image(
+			bitmap = background,
+			contentDescription = null,
+			alignment = Alignment.Center,
+			contentScale = ContentScale.Crop,
+			colorFilter = ColorFilter.tint(colorResource(R.color.background_filter), BlendMode.SrcAtop),
+			modifier = Modifier
+				.fillMaxSize()
+				.then(if (blur) Modifier.blur(10.dp) else Modifier)
+		)
+	} else {
+		AppThemeBackground()
 	}
 }

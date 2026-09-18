@@ -5,6 +5,7 @@ import static org.koin.java.KoinJavaComponent.inject;
 import android.content.Context;
 
 import androidx.annotation.Nullable;
+import androidx.lifecycle.LifecycleOwner;
 import androidx.leanback.widget.ArrayObjectAdapter;
 import androidx.leanback.widget.HeaderItem;
 import androidx.leanback.widget.ListRow;
@@ -104,11 +105,17 @@ public class ItemRowAdapter extends MutableObjectAdapter<Object> {
     private final Lazy<org.jellyfin.sdk.api.client.ApiClient> api = inject(org.jellyfin.sdk.api.client.ApiClient.class);
     private final Lazy<UserViewsRepository> userViewsRepository = inject(UserViewsRepository.class);
     private Context context;
+    private LifecycleOwner retrieveLifecycleOwner;
 
-    private boolean isCurrentlyRetrieving() {
+    public boolean isCurrentlyRetrieving() {
         synchronized (currentlyRetrievingSemaphore) {
             return currentlyRetrieving;
         }
+    }
+
+    /** Reset the UI state when a screen-owned retrieval is cancelled. */
+    public void resetRetrievalState() {
+        setCurrentlyRetrieving(false);
     }
 
     private void setCurrentlyRetrieving(boolean currentlyRetrieving) {
@@ -131,6 +138,19 @@ public class ItemRowAdapter extends MutableObjectAdapter<Object> {
 
     public void setRow(ListRow row) {
         mRow = row;
+    }
+
+    /**
+     * Bind network retrievals to the screen owning this row. The process
+     * lifecycle remains the fallback for rows created outside a Fragment.
+     */
+    public void setRetrieveLifecycleOwner(@Nullable LifecycleOwner lifecycleOwner) {
+        retrieveLifecycleOwner = lifecycleOwner;
+    }
+
+    @Nullable
+    public LifecycleOwner getRetrieveLifecycleOwner() {
+        return retrieveLifecycleOwner;
     }
 
     public void setSiblingRow(Row row) {
@@ -570,6 +590,11 @@ public class ItemRowAdapter extends MutableObjectAdapter<Object> {
     }
 
     public void Retrieve() {
+        if (isCurrentlyRetrieving()) {
+            Timber.i("Skipping retrieve because the row is already retrieving");
+            return;
+        }
+
         notifyRetrieveStarted();
         lastFullRetrieve = Instant.now();
         itemsLoaded = 0;

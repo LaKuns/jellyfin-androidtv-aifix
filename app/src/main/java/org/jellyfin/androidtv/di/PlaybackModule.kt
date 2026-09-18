@@ -18,6 +18,7 @@ import org.jellyfin.androidtv.ui.playback.PlaybackLauncher
 import org.jellyfin.androidtv.ui.playback.VideoQueueManager
 import org.jellyfin.androidtv.ui.playback.rewrite.RewriteMediaManager
 import org.jellyfin.androidtv.util.AndroidVersion
+import org.jellyfin.androidtv.util.PerformanceProfile
 import org.jellyfin.androidtv.util.profile.createDeviceProfile
 import org.jellyfin.playback.core.playbackManager
 import org.jellyfin.playback.jellyfin.jellyfinPlugin
@@ -33,6 +34,7 @@ import org.koin.core.scope.Scope
 import org.koin.dsl.module
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.seconds
 import org.jellyfin.androidtv.ui.playback.PlaybackManager as LegacyPlaybackManager
 
 val playbackModule = module {
@@ -71,16 +73,17 @@ fun Scope.createPlaybackManager() = playbackManager(androidContext()) {
 	}
 
 	val userPreferences = get<UserPreferences>()
+	val lowPerformanceDevice = PerformanceProfile.isLowPerformanceDevice(androidContext())
 	val bufferLength = userPreferences[UserPreferences.bufferLength]
 	val exoPlayerOptions = ExoPlayerOptions(
 		preferFfmpeg = userPreferences[UserPreferences.preferExoPlayerFfmpeg],
 		enableLibass = userPreferences[UserPreferences.assDirectPlay],
 		enableDebugLogging = userPreferences[UserPreferences.debuggingEnabled],
 		baseDataSourceFactory = get<HttpDataSource.Factory>(),
-		minBufferDuration = bufferLength.minBufferDuration,
-		maxBufferDuration = bufferLength.maxBufferDuration,
-		bufferForPlaybackDuration = bufferLength.bufferForPlaybackDuration,
-		bufferForPlaybackAfterRebufferDuration = bufferLength.bufferForPlaybackAfterRebufferDuration,
+		minBufferDuration = if (lowPerformanceDevice) 10.seconds else bufferLength.minBufferDuration,
+		maxBufferDuration = if (lowPerformanceDevice) 30.seconds else bufferLength.maxBufferDuration,
+		bufferForPlaybackDuration = if (lowPerformanceDevice) 1.5.seconds else bufferLength.bufferForPlaybackDuration,
+		bufferForPlaybackAfterRebufferDuration = if (lowPerformanceDevice) 3.seconds else bufferLength.bufferForPlaybackAfterRebufferDuration,
 	)
 	install(exoPlayerPlugin(get(), exoPlayerOptions))
 

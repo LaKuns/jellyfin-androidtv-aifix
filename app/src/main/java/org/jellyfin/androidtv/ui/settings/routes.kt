@@ -14,6 +14,7 @@ import org.jellyfin.androidtv.ui.settings.screen.authentication.SettingsAuthenti
 import org.jellyfin.androidtv.ui.settings.screen.authentication.SettingsAuthenticationSortByScreen
 import org.jellyfin.androidtv.ui.settings.screen.customization.SettingsCustomizationBackdropScreen
 import org.jellyfin.androidtv.ui.settings.screen.customization.SettingsCustomizationClockScreen
+import org.jellyfin.androidtv.ui.settings.screen.customization.SettingsCustomizationPerformanceScreen
 import org.jellyfin.androidtv.ui.settings.screen.customization.SettingsCustomizationScreen
 import org.jellyfin.androidtv.ui.settings.screen.customization.SettingsCustomizationThemeScreen
 import org.jellyfin.androidtv.ui.settings.screen.customization.SettingsCustomizationWatchedIndicatorScreen
@@ -51,6 +52,7 @@ import org.jellyfin.androidtv.ui.settings.screen.playback.SettingsPlaybackPrerol
 import org.jellyfin.androidtv.ui.settings.screen.playback.SettingsPlaybackRefreshRateSwitchingBehaviorScreen
 import org.jellyfin.androidtv.ui.settings.screen.playback.SettingsPlaybackResumeSubtractDurationScreen
 import org.jellyfin.androidtv.ui.settings.screen.playback.SettingsPlaybackScreen
+import org.jellyfin.androidtv.ui.settings.screen.playback.SettingsPlaybackStrategyScreen
 import org.jellyfin.androidtv.ui.settings.screen.playback.SettingsPlaybackZoomModeScreen
 import org.jellyfin.androidtv.ui.settings.screen.playback.mediasegment.SettingsPlaybackMediaSegmentScreen
 import org.jellyfin.androidtv.ui.settings.screen.playback.mediasegment.SettingsPlaybackMediaSegmentsScreen
@@ -71,6 +73,7 @@ object Routes {
 	const val AUTHENTICATION_SORT_BY = "/authentication/sort-by"
 	const val AUTHENTICATION_AUTO_SIGN_IN = "/authentication/auto-sign-in"
 	const val CUSTOMIZATION = "/customization"
+	const val CUSTOMIZATION_PERFORMANCE = "/customization/performance"
 	const val CUSTOMIZATION_THEME = "/customization/theme"
 	const val CUSTOMIZATION_CLOCK = "/customization/clock"
 	const val CUSTOMIZATION_WATCHED_INDICATOR = "/customization/watch-indicators"
@@ -103,6 +106,7 @@ object Routes {
 	const val PLAYBACK_MEDIA_SEGMENTS = "/playback/media-segments"
 	const val PLAYBACK_MEDIA_SEGMENT = "/playback/media-segments/{segmentType}"
 	const val PLAYBACK_ADVANCED = "/playback/advanced"
+	const val PLAYBACK_STRATEGY = "/playback/strategy"
 	const val PLAYBACK_RESUME_SUBTRACT_DURATION = "/playback/resume-subtract-duration"
 	const val PLAYBACK_MAX_BITRATE = "/playback/max-bitrate"
 	const val PLAYBACK_REFRESH_RATE_SWITCHING_BEHAVIOR = "/playback/refresh-rate-switching-behavior"
@@ -151,6 +155,9 @@ val routes = mapOf<String, RouteComposable>(
 	},
 	Routes.CUSTOMIZATION to {
 		SettingsCustomizationScreen()
+	},
+	Routes.CUSTOMIZATION_PERFORMANCE to {
+		SettingsCustomizationPerformanceScreen()
 	},
 	Routes.CUSTOMIZATION_THEME to {
 		SettingsCustomizationThemeScreen()
@@ -255,6 +262,9 @@ val routes = mapOf<String, RouteComposable>(
 	},
 	Routes.PLAYBACK_ADVANCED to {
 		SettingsPlaybackAdvancedScreen()
+	},
+	Routes.PLAYBACK_STRATEGY to {
+		SettingsPlaybackStrategyScreen()
 	},
 	Routes.PLAYBACK_RESUME_SUBTRACT_DURATION to {
 		SettingsPlaybackResumeSubtractDurationScreen()

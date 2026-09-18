@@ -457,6 +457,16 @@
     <string name="server_issue_timeout">Connection timed out</string>
     <string name="server_issue_ssl_handshake">SSL handshake failed</string>
     <string name="pref_customization">Customization</string>
+    <string name="performance_mode_title">Performance mode</string>
+    <string name="performance_mode_description">Reduce UI effects and background work on older TVs</string>
+    <string name="performance_mode_auto">Automatic</string>
+    <string name="performance_mode_low">Low resource usage</string>
+    <string name="performance_mode_full">Full visual effects</string>
+    <string name="playback_strategy_title">Playback strategy</string>
+    <string name="playback_strategy_description">Choose between local decoding and server transcoding</string>
+    <string name="playback_strategy_auto">Automatic</string>
+    <string name="playback_strategy_direct">Prefer direct play</string>
+    <string name="playback_strategy_server">Prefer server transcoding</string>
     <string name="sort_accounts_by">Sort accounts by</string>
     <string name="pref_accounts">Accounts</string>
     <string name="pref_behavior">Behavior</string>

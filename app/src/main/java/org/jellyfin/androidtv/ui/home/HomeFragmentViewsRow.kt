@@ -3,11 +3,13 @@ package org.jellyfin.androidtv.ui.home
 import android.content.Context
 import androidx.leanback.widget.HeaderItem
 import androidx.leanback.widget.ListRow
+import androidx.leanback.widget.Presenter
 import androidx.leanback.widget.Row
 import org.jellyfin.androidtv.R
 import org.jellyfin.androidtv.data.querying.GetUserViewsRequest
 import org.jellyfin.androidtv.ui.itemhandling.ItemRowAdapter
 import org.jellyfin.androidtv.ui.presentation.CardPresenter
+import org.jellyfin.androidtv.ui.presentation.LowPerformanceCardPresenter
 import org.jellyfin.androidtv.ui.presentation.MutableObjectAdapter
 
 class HomeFragmentViewsRow(
@@ -18,14 +20,19 @@ class HomeFragmentViewsRow(
 		val largeCardPresenter = CardPresenter(true, 126)
 	}
 
-	override fun addToRowsAdapter(context: Context, cardPresenter: CardPresenter, rowsAdapter: MutableObjectAdapter<Row>) {
-		val presenter = if (small) smallCardPresenter else largeCardPresenter
+	override fun addToRowsAdapter(context: Context, cardPresenter: Presenter, rowsAdapter: MutableObjectAdapter<Row>) {
+		val presenter = if (cardPresenter is LowPerformanceCardPresenter) {
+			LowPerformanceCardPresenter(staticHeight = if (small) 75 else 126)
+		} else if (small) {
+			smallCardPresenter
+		} else {
+			largeCardPresenter
+		}
 		val rowAdapter = ItemRowAdapter(context, GetUserViewsRequest, presenter, rowsAdapter)
 
 		val header = HeaderItem(context.getString(R.string.lbl_my_media))
 		val row = ListRow(header, rowAdapter)
 		rowAdapter.setRow(row)
-		rowAdapter.Retrieve()
 		rowsAdapter.add(row)
 	}
 }

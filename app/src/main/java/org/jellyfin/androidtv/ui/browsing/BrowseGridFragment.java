@@ -56,6 +56,7 @@ import org.jellyfin.androidtv.util.CoroutineUtils;
 import org.jellyfin.androidtv.util.ImageHelper;
 import org.jellyfin.androidtv.util.InfoLayoutHelper;
 import org.jellyfin.androidtv.util.KeyProcessor;
+import org.jellyfin.androidtv.util.PerformanceProfile;
 import org.jellyfin.androidtv.util.Utils;
 import org.jellyfin.androidtv.util.apiclient.EmptyResponse;
 import org.jellyfin.sdk.api.client.ApiClient;
@@ -78,6 +79,7 @@ import timber.log.Timber;
 
 public class BrowseGridFragment extends Fragment implements View.OnKeyListener {
     private final static int CHUNK_SIZE_MINIMUM = 25;
+    private final static int LOW_PERFORMANCE_CHUNK_SIZE_MAXIMUM = 60;
 
     private String mainTitle;
     private FragmentActivity mActivity;
@@ -94,6 +96,7 @@ public class BrowseGridFragment extends Fragment implements View.OnKeyListener {
     private ImageType mImageType = ImageType.POSTER;
     private GridDirection mGridDirection = GridDirection.HORIZONTAL;
     private boolean determiningPosterSize = false;
+    private boolean lowPerformanceDevice;
 
     private UUID mParentId;
     private BaseItemDto mFolder;
@@ -143,18 +146,26 @@ public class BrowseGridFragment extends Fragment implements View.OnKeyListener {
         mActivity = getActivity();
 
         mFolder = Json.Default.decodeFromString(BaseItemDto.Companion.serializer(), getArguments().getString(Extras.Folder));
+        lowPerformanceDevice = PerformanceProfile.isLowPerformanceDevice(requireContext());
         mParentId = mFolder.getId();
         mainTitle = mFolder.getName();
         libraryPreferences = preferencesRepository.getValue().getLibraryPreferences(Objects.requireNonNull(mFolder.getDisplayPreferencesId()));
         mPosterSizeSetting = libraryPreferences.get(LibraryPreferences.Companion.getPosterSize());
         mImageType = libraryPreferences.get(LibraryPreferences.Companion.getImageType());
         mGridDirection = libraryPreferences.get(LibraryPreferences.Companion.getGridDirection());
-        mCardFocusScale = getResources().getFraction(R.fraction.card_scale_focus, 1, 1);
+        mCardFocusScale = lowPerformanceDevice
+                ? 1.0
+                : getResources().getFraction(R.fraction.card_scale_focus, 1, 1);
 
         if (mGridDirection.equals(GridDirection.VERTICAL))
-            setGridPresenter(new VerticalGridPresenter(FocusHighlight.ZOOM_FACTOR_LARGE, false));
+            setGridPresenter(new VerticalGridPresenter(
+                    lowPerformanceDevice ? FocusHighlight.ZOOM_FACTOR_NONE : FocusHighlight.ZOOM_FACTOR_LARGE,
+                    false
+            ));
         else
-            setGridPresenter(new HorizontalGridPresenter());
+            setGridPresenter(new HorizontalGridPresenter(
+                    lowPerformanceDevice ? FocusHighlight.ZOOM_FACTOR_NONE : FocusHighlight.ZOOM_FACTOR_LARGE
+            ));
 
         sortOptions = new HashMap<>();
         {
@@ -212,6 +223,8 @@ public class BrowseGridFragment extends Fragment implements View.OnKeyListener {
 
     @Override
     public void onDestroyView() {
+        mHandler.removeCallbacksAndMessages(null);
+        if (mAdapter != null) ItemRowAdapterHelperKt.cancelRetrieval(mAdapter);
         super.onDestroyView();
 
         binding = null;
@@ -259,6 +272,7 @@ public class BrowseGridFragment extends Fragment implements View.OnKeyListener {
         gridPresenter.setOnItemViewSelectedListener(mRowSelectedListener);
         gridPresenter.setOnItemViewClickedListener(mClickedListener);
         gridPresenter.setShadowEnabled(false);
+        gridPresenter.enableChildRoundedCorners(!lowPerformanceDevice);
         mGridPresenter = gridPresenter;
     }
 
@@ -272,6 +286,7 @@ public class BrowseGridFragment extends Fragment implements View.OnKeyListener {
         gridPresenter.setOnItemViewSelectedListener(mRowSelectedListener);
         gridPresenter.setOnItemViewClickedListener(mClickedListener);
         gridPresenter.setShadowEnabled(false);
+        gridPresenter.enableChildRoundedCorners(!lowPerformanceDevice);
         mGridPresenter = gridPresenter;
     }
 
@@ -279,10 +294,18 @@ public class BrowseGridFragment extends Fragment implements View.OnKeyListener {
     public void setItem(BaseRowItem item) {
         if (item != null) {
             binding.title.setText(item.getFullName(requireContext()));
-            InfoLayoutHelper.addInfoRow(requireContext(), item.getBaseItem(), binding.infoRow, true);
+            if (lowPerformanceDevice) {
+                InfoLayoutHelper.addLowPerformanceInfoRow(requireContext(), item.getBaseItem(), binding.infoRow, true);
+            } else {
+                InfoLayoutHelper.addInfoRow(requireContext(), item.getBaseItem(), binding.infoRow, true);
+            }
         } else {
             binding.title.setText("");
-            binding.infoRow.removeAllViews();
+            if (lowPerformanceDevice) {
+                InfoLayoutHelper.addLowPerformanceInfoRow(requireContext(), null, binding.infoRow, true);
+            } else {
+                InfoLayoutHelper.addInfoRow(requireContext(), null, binding.infoRow, true);
+            }
         }
     }
 
@@ -423,6 +446,10 @@ public class BrowseGridFragment extends Fragment implements View.OnKeyListener {
                 default:
                     throw new IllegalStateException("Unexpected value: " + mPosterSizeSetting);
             }
+            if (lowPerformanceDevice) {
+                int maximumColumns = imageType.equals(ImageType.BANNER) ? 3 : imageType.equals(ImageType.THUMB) ? 5 : 7;
+                numCols = Math.min(numCols, maximumColumns);
+            }
             ((VerticalGridPresenter) mGridPresenter).setNumberOfColumns(numCols);
         } else if (mGridPresenter instanceof HorizontalGridPresenter) {
             int numRows;
@@ -444,6 +471,10 @@ public class BrowseGridFragment extends Fragment implements View.OnKeyListener {
                     break;
                 default:
                     throw new IllegalStateException("Unexpected value: " + mPosterSizeSetting);
+            }
+            if (lowPerformanceDevice) {
+                int maximumRows = imageType.equals(ImageType.BANNER) ? 4 : 3;
+                numRows = Math.min(numRows, maximumRows);
             }
             ((HorizontalGridPresenter) mGridPresenter).setNumberOfRows(numRows);
         }
@@ -582,9 +613,14 @@ public class BrowseGridFragment extends Fragment implements View.OnKeyListener {
             mGridDirection = gridDirection;
 
             if (mGridDirection.equals(GridDirection.VERTICAL) && (mGridPresenter == null || !(mGridPresenter instanceof VerticalGridPresenter))) {
-                setGridPresenter(new VerticalGridPresenter(FocusHighlight.ZOOM_FACTOR_LARGE, false));
+                setGridPresenter(new VerticalGridPresenter(
+                        lowPerformanceDevice ? FocusHighlight.ZOOM_FACTOR_NONE : FocusHighlight.ZOOM_FACTOR_LARGE,
+                        false
+                ));
             } else if (mGridDirection.equals(GridDirection.HORIZONTAL) && (mGridPresenter == null || !(mGridPresenter instanceof HorizontalGridPresenter))) {
-                setGridPresenter(new HorizontalGridPresenter());
+                setGridPresenter(new HorizontalGridPresenter(
+                        lowPerformanceDevice ? FocusHighlight.ZOOM_FACTOR_NONE : FocusHighlight.ZOOM_FACTOR_LARGE
+                ));
             }
             setDefaultGridRowCols(mPosterSizeSetting, mImageType);
             setAutoCardGridValues();
@@ -613,6 +649,7 @@ public class BrowseGridFragment extends Fragment implements View.OnKeyListener {
     }
 
     private void buildAdapter() {
+        if (mAdapter != null) ItemRowAdapterHelperKt.cancelRetrieval(mAdapter);
         mCardPresenter = new CardPresenter(false, mImageType, mCardHeight, true);
 
         Timber.d("buildAdapter cardHeight <%s> getCardWidthBy <%s> chunks <%s> type <%s>", mCardHeight, (int) getCardWidthBy(mCardHeight, mImageType, mFolder), mRowDef.getChunkSize(), mRowDef.getQueryType().toString());
@@ -620,10 +657,10 @@ public class BrowseGridFragment extends Fragment implements View.OnKeyListener {
         // adapt chunk size if needed
         int chunkSize = mRowDef.getChunkSize();
         if (mCardsScreenEst > 0 && mCardsScreenEst >= chunkSize) {
-            chunkSize = Math.min(mCardsScreenEst + mCardsScreenStride, 150); // cap at 150
+            int maximumChunkSize = lowPerformanceDevice ? LOW_PERFORMANCE_CHUNK_SIZE_MAXIMUM : 150;
+            chunkSize = Math.min(mCardsScreenEst + mCardsScreenStride, maximumChunkSize);
             Timber.d("buildAdapter adjusting chunkSize to <%s> screenEst <%s>", chunkSize, mCardsScreenEst);
         }
-        chunkSize=100;
 
         switch (mRowDef.getQueryType()) {
             case NextUp:
@@ -657,6 +694,7 @@ public class BrowseGridFragment extends Fragment implements View.OnKeyListener {
                 mAdapter = new ItemRowAdapter(requireContext(), mRowDef.getQuery(), chunkSize, mRowDef.getPreferParentThumb(), mRowDef.isStaticHeight(), mCardPresenter, null);
                 break;
         }
+        mAdapter.setRetrieveLifecycleOwner(this);
         mDirty = false;
 
         FilterOptions filters = new FilterOptions();
@@ -913,9 +951,10 @@ public class BrowseGridFragment extends Fragment implements View.OnKeyListener {
     private final Runnable mDelayedSetItem = new Runnable() {
         @Override
         public void run() {
-            if (!getLifecycle().getCurrentState().isAtLeast(Lifecycle.State.STARTED)) return;
+            if (!getLifecycle().getCurrentState().isAtLeast(Lifecycle.State.STARTED)
+                    || binding == null || mCurrentItem == null) return;
 
-            backgroundService.getValue().setBackground(mCurrentItem.getBaseItem());
+            backgroundService.getValue().setSelectionBackground(mCurrentItem.getBaseItem());
             setItem(mCurrentItem);
         }
     };
@@ -933,7 +972,6 @@ public class BrowseGridFragment extends Fragment implements View.OnKeyListener {
             } else {
                 mCurrentItem = (BaseRowItem) item;
                 binding.title.setText(mCurrentItem.getName(requireContext()));
-                binding.infoRow.removeAllViews();
                 mHandler.postDelayed(mDelayedSetItem, VIEW_SELECT_UPDATE_DELAY);
 
                 if (!determiningPosterSize)

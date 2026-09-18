@@ -5,12 +5,12 @@ import android.content.Context
 import androidx.leanback.widget.ArrayObjectAdapter
 import androidx.leanback.widget.HeaderItem
 import androidx.leanback.widget.ListRow
+import androidx.leanback.widget.Presenter
 import androidx.leanback.widget.Row
 import org.jellyfin.androidtv.R
 import org.jellyfin.androidtv.auth.repository.UserRepository
 import org.jellyfin.androidtv.constant.LiveTvOption
 import org.jellyfin.androidtv.ui.GridButton
-import org.jellyfin.androidtv.ui.presentation.CardPresenter
 import org.jellyfin.androidtv.ui.presentation.GridButtonPresenter
 import org.jellyfin.androidtv.ui.presentation.MutableObjectAdapter
 import org.jellyfin.androidtv.util.Utils
@@ -19,7 +19,7 @@ class HomeFragmentLiveTVRow(
 	private val activity: Activity,
 	private val userRepository: UserRepository,
 ) : HomeFragmentRow {
-	override fun addToRowsAdapter(context: Context, cardPresenter: CardPresenter, rowsAdapter: MutableObjectAdapter<Row>) {
+	override fun addToRowsAdapter(context: Context, cardPresenter: Presenter, rowsAdapter: MutableObjectAdapter<Row>) {
 		val header = HeaderItem(rowsAdapter.size().toLong(), activity.getString(R.string.pref_live_tv_cat))
 		val adapter = ArrayObjectAdapter(GridButtonPresenter())
 

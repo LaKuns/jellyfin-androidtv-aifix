@@ -1,9 +1,11 @@
 package org.jellyfin.androidtv.ui.home
 
 import android.os.Bundle
+import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.View
 import androidx.leanback.app.RowsSupportFragment
+import androidx.leanback.widget.FocusHighlight
 import androidx.leanback.widget.ListRow
 import androidx.leanback.widget.OnItemViewClickedListener
 import androidx.leanback.widget.OnItemViewSelectedListener
@@ -15,6 +17,7 @@ import androidx.lifecycle.flowWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
@@ -42,15 +45,19 @@ import org.jellyfin.androidtv.ui.browsing.CompositeSelectedListener
 import org.jellyfin.androidtv.ui.itemhandling.BaseRowItem
 import org.jellyfin.androidtv.ui.itemhandling.ItemLauncher
 import org.jellyfin.androidtv.ui.itemhandling.ItemRowAdapter
+import org.jellyfin.androidtv.ui.itemhandling.awaitCurrentRetrieval
+import org.jellyfin.androidtv.ui.itemhandling.cancelRetrieval
 import org.jellyfin.androidtv.ui.itemhandling.refreshItem
 import org.jellyfin.androidtv.ui.navigation.Destinations
 import org.jellyfin.androidtv.ui.navigation.NavigationRepository
 import org.jellyfin.androidtv.ui.playback.AudioEventListener
 import org.jellyfin.androidtv.ui.playback.MediaManager
 import org.jellyfin.androidtv.ui.presentation.CardPresenter
+import org.jellyfin.androidtv.ui.presentation.LowPerformanceCardPresenter
 import org.jellyfin.androidtv.ui.presentation.MutableObjectAdapter
 import org.jellyfin.androidtv.ui.presentation.PositionableListRowPresenter
 import org.jellyfin.androidtv.util.KeyProcessor
+import org.jellyfin.androidtv.util.PerformanceProfile
 import org.jellyfin.playback.core.PlaybackManager
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.sockets.subscribe
@@ -61,6 +68,11 @@ import timber.log.Timber
 import kotlin.time.Duration.Companion.seconds
 
 class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyListener {
+	companion object {
+		private const val REFRESH_THROTTLE_MS = 2_000L
+		private const val REFRESH_ROW_DELAY_MS = 100L
+	}
+
 	private val api by inject<ApiClient>()
 	private val backgroundService by inject<BackgroundService>()
 	private val playbackManager by inject<PlaybackManager>()
@@ -75,6 +87,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	private val navigationRepository by inject<NavigationRepository>()
 	private val itemLauncher by inject<ItemLauncher>()
 	private val keyProcessor by inject<KeyProcessor>()
+	private val lowPerformanceDevice by lazy { PerformanceProfile.isLowPerformanceDevice(requireContext()) }
 
 	private val helper by lazy { HomeFragmentHelper(requireContext(), userRepository, userPreferences) }
 
@@ -82,6 +95,10 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	private var currentItem: BaseRowItem? = null
 	private var currentRow: ListRow? = null
 	private var justLoaded = true
+	private var lastRowsRefreshAt = 0L
+	private var rowsRefreshJob: Job? = null
+	private var refreshQueued = false
+	private var forceRefreshQueued = false
 
 	// Special rows
 	private val notificationsRow by lazy { NotificationsHomeFragmentRow(lifecycleScope, notificationsRepository) }
@@ -90,7 +107,12 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	override fun onCreate(savedInstanceState: Bundle?) {
 		super.onCreate(savedInstanceState)
 
-		adapter = MutableObjectAdapter<Row>(PositionableListRowPresenter())
+		adapter = MutableObjectAdapter<Row>(
+			PositionableListRowPresenter(
+				null,
+				if (lowPerformanceDevice) FocusHighlight.ZOOM_FACTOR_NONE else FocusHighlight.ZOOM_FACTOR_MEDIUM,
+			)
+		)
 
 		lifecycleScope.launch(Dispatchers.IO) {
 			val currentUser = withTimeout(30.seconds) {
@@ -126,7 +148,11 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 
 			// Add sections to layout
 			withContext(Dispatchers.Main) {
-				val cardPresenter = CardPresenter()
+				val cardPresenter: Presenter = if (lowPerformanceDevice) {
+					LowPerformanceCardPresenter()
+				} else {
+					CardPresenter()
+				}
 
 				// Add rows in order
 				notificationsRow.addToRowsAdapter(requireContext(), cardPresenter, adapter as MutableObjectAdapter<Row>)
@@ -139,11 +165,16 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				for (i in 0 until rowsAdapter.size()) {
 					val listRow = rowsAdapter.get(i) as? ListRow ?: continue
 					val itemAdapter = listRow.adapter as? ItemRowAdapter ?: continue
+					itemAdapter.setRetrieveLifecycleOwner(this@HomeRowsFragment)
 					if (itemAdapter.queryType == QueryType.LiveTvProgram && i > 0) {
 						val previousRow = rowsAdapter.get(i - 1)
 						if (previousRow != null) itemAdapter.setSiblingRow(previousRow)
 					}
 				}
+
+				// Rows are added empty and loaded one at a time. This lets the first
+				// visible row render without competing with every other home request.
+				refreshRows(force = true, delayed = false)
 			}
 		}
 
@@ -217,14 +248,47 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	}
 
 	private fun refreshRows(force: Boolean = false, delayed: Boolean = true) {
-		lifecycleScope.launch(Dispatchers.IO) {
+		refreshQueued = true
+		forceRefreshQueued = forceRefreshQueued || force
+		if (rowsRefreshJob?.isActive == true) return
+
+		rowsRefreshJob = lifecycleScope.launch {
 			if (delayed) delay(1.5.seconds)
 
-			repeat(adapter.size()) { i ->
-				val rowAdapter = (adapter[i] as? ListRow)?.adapter as? ItemRowAdapter
-				if (force) rowAdapter?.Retrieve()
-				else rowAdapter?.ReRetrieveIfNeeded()
+			while (refreshQueued && isActive) {
+				refreshQueued = false
+				val refreshForce = forceRefreshQueued
+				forceRefreshQueued = false
+
+				val elapsed = SystemClock.elapsedRealtime() - lastRowsRefreshAt
+				val remainingDelay = REFRESH_THROTTLE_MS - elapsed
+				if (remainingDelay > 0) delay(remainingDelay)
+				if (!isActive) break
+
+				lastRowsRefreshAt = SystemClock.elapsedRealtime()
+				@Suppress("UNCHECKED_CAST")
+				val rowAdapters = (adapter as? MutableObjectAdapter<Row>)
+					?.mapNotNull { row -> (row as? ListRow)?.adapter as? ItemRowAdapter }
+					.orEmpty()
+
+				for (rowAdapter in rowAdapters) {
+					if (!isActive) break
+
+					// An existing request is already the freshest result available;
+					// wait for it instead of starting a duplicate request.
+					if (!rowAdapter.isCurrentlyRetrieving()) {
+						if (refreshForce) rowAdapter.Retrieve()
+						else rowAdapter.ReRetrieveIfNeeded()
+					}
+
+					// Keep refreshes sequential without waking the main thread every
+					// few milliseconds while a network request is in flight.
+					rowAdapter.awaitCurrentRetrieval()
+					if (isActive) delay(REFRESH_ROW_DELAY_MS)
+				}
 			}
+
+			rowsRefreshJob = null
 		}
 	}
 
@@ -236,7 +300,19 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		adapter.refreshItem(api, this, item)
 	}
 
+	override fun onDestroyView() {
+		cancelRowRetrievals()
+		super.onDestroyView()
+	}
+
+	private fun cancelRowRetrievals() {
+		(adapter as? MutableObjectAdapter<Row>)
+			?.mapNotNull { row -> (row as? ListRow)?.adapter as? ItemRowAdapter }
+			?.forEach { it.cancelRetrieval() }
+	}
+
 	override fun onDestroy() {
+		cancelRowRetrievals()
 		super.onDestroy()
 
 		mediaManager.removeAudioEventListener(this)
@@ -283,7 +359,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				val itemRowAdapter = row.adapter as? ItemRowAdapter
 				itemRowAdapter?.loadMoreItemsIfNeeded(itemRowAdapter.indexOf(item))
 
-				backgroundService.setBackground(item.baseItem)
+				backgroundService.setSelectionBackground(item.baseItem)
 			}
 		}
 	}

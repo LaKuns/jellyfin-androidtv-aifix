@@ -31,7 +31,7 @@ class GenericFolderFragment : EnhancedBrowseFragment() {
 		if (showSpecialViewTypes.contains(mFolder.type)) {
 			if (mFolder.type != BaseItemKind.CHANNEL_FOLDER_ITEM) {
 				val resume = GetItemsRequest(
-					fields = ItemRepository.itemFields,
+					fields = ItemRepository.cardFields,
 					parentId = mFolder.id,
 					limit = 50,
 					filters = setOf(ItemFilter.IS_RESUMABLE),
@@ -42,7 +42,7 @@ class GenericFolderFragment : EnhancedBrowseFragment() {
 			}
 
 			val latest = GetItemsRequest(
-				fields = ItemRepository.itemFields,
+				fields = ItemRepository.cardFields,
 				parentId = mFolder.id,
 				limit = 50,
 				filters = setOf(ItemFilter.IS_UNPLAYED),
@@ -53,7 +53,10 @@ class GenericFolderFragment : EnhancedBrowseFragment() {
 		}
 
 		val byName = GetItemsRequest(
-			fields = ItemRepository.itemFields,
+			// The horizontal browse screen shows the selected item's summary,
+			// but still does not need media sources, streams, chapters or
+			// trickplay data.
+			fields = ItemRepository.browseFields,
 			parentId = mFolder.id,
 		)
 		val header = when (mFolder.type) {
@@ -61,7 +64,11 @@ class GenericFolderFragment : EnhancedBrowseFragment() {
 			else -> getString(R.string.lbl_by_name)
 		}
 
-		mRows.add(BrowseRowDef(header, byName, 100))
+		// Loading 100 episode DTOs and their artwork at once creates a large
+		// allocation spike on older TVs. Pagination is already handled by
+		// ItemRowAdapter as focus approaches the end of the loaded range.
+		val chunkSize = 32
+		mRows.add(BrowseRowDef(header, byName, chunkSize, false, mFolder.type == BaseItemKind.SEASON))
 
 		if (mFolder.type == BaseItemKind.SEASON) {
 			val specials = GetSpecialsRequest(mFolder.id)

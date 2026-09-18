@@ -13,6 +13,8 @@ import org.jellyfin.androidtv.preference.constant.ClockBehavior
 import org.jellyfin.androidtv.preference.constant.HEVCLevel
 import org.jellyfin.androidtv.preference.constant.HdrOverrideMode
 import org.jellyfin.androidtv.preference.constant.NextUpBehavior
+import org.jellyfin.androidtv.preference.constant.PerformanceMode
+import org.jellyfin.androidtv.preference.constant.PlaybackStrategy
 import org.jellyfin.androidtv.preference.constant.RefreshRateSwitchingBehavior
 import org.jellyfin.androidtv.preference.constant.StillWatchingBehavior
 import org.jellyfin.androidtv.preference.constant.WatchedIndicatorBehavior
@@ -40,6 +42,17 @@ class UserPreferences(context: Context) : SharedPreferenceStore(
 ) {
 	companion object {
 		/* Display */
+		/**
+		 * Select the rendering and loading profile used by browsing screens.
+		 */
+		var performanceMode = enumPreference("performance_mode", PerformanceMode.AUTO)
+
+		/**
+		 * Select whether compatible media should be decoded locally or prepared
+		 * by the Jellyfin server.
+		 */
+		var playbackStrategy = enumPreference("playback_strategy", PlaybackStrategy.AUTO)
+
 		/**
 		 * Select the app theme
 		 */

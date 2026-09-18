@@ -3,13 +3,13 @@ package org.jellyfin.androidtv.ui.home
 import android.content.Context
 import androidx.leanback.widget.HeaderItem
 import androidx.leanback.widget.ListRow
+import androidx.leanback.widget.Presenter
 import androidx.leanback.widget.Row
 import org.jellyfin.androidtv.constant.QueryType
 import org.jellyfin.androidtv.data.querying.GetUserViewsRequest
 import org.jellyfin.androidtv.preference.UserPreferences
 import org.jellyfin.androidtv.ui.browsing.BrowseRowDef
 import org.jellyfin.androidtv.ui.itemhandling.ItemRowAdapter
-import org.jellyfin.androidtv.ui.presentation.CardPresenter
 import org.jellyfin.androidtv.ui.presentation.MutableObjectAdapter
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
@@ -19,7 +19,7 @@ class HomeFragmentBrowseRowDefRow(
 ) : HomeFragmentRow, KoinComponent {
 	private val userPreferences by inject<UserPreferences>()
 
-	override fun addToRowsAdapter(context: Context, cardPresenter: CardPresenter, rowsAdapter: MutableObjectAdapter<Row>) {
+	override fun addToRowsAdapter(context: Context, cardPresenter: Presenter, rowsAdapter: MutableObjectAdapter<Row>) {
 		val header = HeaderItem(browseRowDef.headerText)
 		val preferParentThumb = userPreferences[UserPreferences.seriesThumbnailsEnabled]
 
@@ -40,7 +40,6 @@ class HomeFragmentBrowseRowDefRow(
 		rowAdapter.setReRetrieveTriggers(browseRowDef.changeTriggers)
 		val row = ListRow(header, rowAdapter)
 		rowAdapter.setRow(row)
-		rowAdapter.Retrieve()
 		rowsAdapter.add(row)
 	}
 }

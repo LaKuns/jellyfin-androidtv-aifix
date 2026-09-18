@@ -1,6 +1,7 @@
 package org.jellyfin.androidtv.ui.playback
 
 import androidx.lifecycle.LifecycleCoroutineScope
+import androidx.leanback.widget.Presenter
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
@@ -13,10 +14,11 @@ import org.jellyfin.playback.core.PlaybackManager
 import org.jellyfin.playback.core.queue.queue
 import org.jellyfin.playback.jellyfin.queue.baseItem
 
-class AudioQueueBaseRowAdapter(
+class AudioQueueBaseRowAdapter @JvmOverloads constructor(
 	private val playbackManager: PlaybackManager,
 	lifecycleScope: LifecycleCoroutineScope,
-) : MutableObjectAdapter<AudioQueueBaseRowItem>(CardPresenter(true, @Suppress("MagicNumber") 140)) {
+	presenter: Presenter = CardPresenter(true, @Suppress("MagicNumber") 140),
+) : MutableObjectAdapter<AudioQueueBaseRowItem>(presenter) {
 	init {
 		lifecycleScope.launch {
 			updateAdapter()

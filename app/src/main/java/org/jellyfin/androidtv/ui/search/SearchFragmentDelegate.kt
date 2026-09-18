@@ -1,6 +1,7 @@
 package org.jellyfin.androidtv.ui.search
 
 import android.content.Context
+import androidx.leanback.widget.FocusHighlight
 import androidx.leanback.widget.HeaderItem
 import androidx.leanback.widget.ListRow
 import androidx.leanback.widget.OnItemViewClickedListener
@@ -14,13 +15,20 @@ import org.jellyfin.androidtv.ui.itemhandling.ItemRowAdapter
 import org.jellyfin.androidtv.ui.presentation.CardPresenter
 import org.jellyfin.androidtv.ui.presentation.CustomListRowPresenter
 import org.jellyfin.androidtv.ui.presentation.MutableObjectAdapter
+import org.jellyfin.androidtv.util.PerformanceProfile
 
 class SearchFragmentDelegate(
 	private val context: Context,
 	private val backgroundService: BackgroundService,
 	private val itemLauncher: ItemLauncher,
 ) {
-	val rowsAdapter = MutableObjectAdapter<Row>(CustomListRowPresenter())
+	val rowsAdapter = MutableObjectAdapter<Row>(CustomListRowPresenter(
+		focusZoomFactor = if (PerformanceProfile.isLowPerformanceDevice(context)) {
+			FocusHighlight.ZOOM_FACTOR_NONE
+		} else {
+			FocusHighlight.ZOOM_FACTOR_MEDIUM
+		}
+	))
 
 	fun showResults(searchResultGroups: Collection<SearchResultGroup>) {
 		rowsAdapter.clear()
@@ -50,7 +58,7 @@ class SearchFragmentDelegate(
 	val onItemViewSelectedListener = OnItemViewSelectedListener { _, item, _, _ ->
 		val baseItem = item?.let { (item as BaseRowItem).baseItem }
 		if (baseItem != null) {
-			backgroundService.setBackground(baseItem)
+			backgroundService.setSelectionBackground(baseItem)
 		} else {
 			backgroundService.clearBackgrounds()
 		}

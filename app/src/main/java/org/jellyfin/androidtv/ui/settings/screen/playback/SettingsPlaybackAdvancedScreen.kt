@@ -136,6 +136,17 @@ fun SettingsPlaybackAdvancedScreen() {
 		}
 
 		item {
+			var playbackStrategy by rememberPreference(userPreferences, UserPreferences.playbackStrategy)
+
+			ListButton(
+				headingContent = { Text(stringResource(R.string.playback_strategy_title)) },
+				captionContent = { Text(stringResource(playbackStrategy.nameRes)) },
+				onClick = { router.push(Routes.PLAYBACK_STRATEGY) },
+				modifier = Modifier.focusKey(Routes.PLAYBACK_STRATEGY),
+			)
+		}
+
+		item {
 			var refreshRateSwitchingBehavior by rememberPreference(userPreferences, UserPreferences.refreshRateSwitchingBehavior)
 
 			ListButton(

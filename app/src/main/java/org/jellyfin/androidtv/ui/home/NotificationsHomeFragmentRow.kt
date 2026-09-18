@@ -12,7 +12,6 @@ import kotlinx.coroutines.flow.onEach
 import org.jellyfin.androidtv.data.model.AppNotification
 import org.jellyfin.androidtv.data.repository.NotificationsRepository
 import org.jellyfin.androidtv.ui.notification.AppNotificationPresenter
-import org.jellyfin.androidtv.ui.presentation.CardPresenter
 import org.jellyfin.androidtv.ui.presentation.MutableObjectAdapter
 
 class NotificationsHomeFragmentRow(
@@ -45,7 +44,7 @@ class NotificationsHomeFragmentRow(
 		}
 	}
 
-	override fun addToRowsAdapter(context: Context, cardPresenter: CardPresenter, rowsAdapter: MutableObjectAdapter<Row>) {
+	override fun addToRowsAdapter(context: Context, cardPresenter: Presenter, rowsAdapter: MutableObjectAdapter<Row>) {
 		this.rowsAdapter = rowsAdapter
 		update(notificationsRepository.notifications.value.isEmpty())
 	}

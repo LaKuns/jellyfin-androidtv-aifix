@@ -3,12 +3,13 @@ package org.jellyfin.androidtv.ui.search
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import org.jellyfin.androidtv.R
 import org.jellyfin.sdk.model.api.BaseItemKind
 import kotlin.time.Duration
@@ -19,6 +20,7 @@ class SearchViewModel(
 ) : ViewModel() {
 	companion object {
 		private val debounceDuration = 600.milliseconds
+		private const val RESULTS_PER_GROUP = 25
 
 		private val groups = mapOf(
 			R.string.lbl_movies to setOf(BaseItemKind.MOVIE),
@@ -36,9 +38,22 @@ class SearchViewModel(
 			R.string.lbl_collections to setOf(BaseItemKind.BOX_SET),
 			R.string.lbl_people to setOf(BaseItemKind.PERSON),
 		)
+
+		// Keep the visible result rows unchanged while reducing a search from
+		// fourteen server requests to six. VIDEO remains separate because its
+		// repository query intentionally excludes movies, episodes and TV.
+		private val groupBatches = listOf(
+			listOf(R.string.lbl_movies, R.string.lbl_series, R.string.lbl_episodes),
+			listOf(R.string.lbl_videos),
+			listOf(R.string.lbl_programs, R.string.channels),
+			listOf(R.string.lbl_playlists, R.string.lbl_artists, R.string.lbl_albums, R.string.lbl_songs),
+			listOf(R.string.photo_albums, R.string.photos),
+			listOf(R.string.lbl_collections, R.string.lbl_people),
+		)
 	}
 
 	private var searchJob: Job? = null
+	private val requestLimiter = Semaphore(3)
 
 	private var previousQuery: String? = null
 
@@ -62,14 +77,33 @@ class SearchViewModel(
 		searchJob = viewModelScope.launch {
 			delay(debounce)
 
-			_searchResultsFlow.value = groups.map { (stringRes, itemKinds) ->
-				async {
-					val result = searchRepository.search(trimmed, itemKinds)
+			val orderedGroups = groups.entries.toList()
+			val groupIndexes = orderedGroups.mapIndexed { index, entry -> entry.key to index }.toMap()
+			val results = arrayOfNulls<SearchResultGroup>(orderedGroups.size)
+			groupBatches.map { labels ->
+				launch {
+					val itemKinds = labels.flatMapTo(linkedSetOf()) { groups.getValue(it) }
+					// Limit simultaneous batched requests so typing does not create
+					// a JSON/image/GC spike on older TVs or on the server.
+					val result = requestLimiter.withPermit {
+						searchRepository.search(trimmed, itemKinds)
+					}
 					val items = result.getOrNull().orEmpty()
 
-					SearchResultGroup(stringRes, items)
+					for (label in labels) {
+						val kinds = groups.getValue(label)
+						val index = groupIndexes.getValue(label)
+						results[index] = SearchResultGroup(
+							label,
+							items.asSequence()
+								.filter { item -> item.type?.let(kinds::contains) == true }
+								.take(RESULTS_PER_GROUP)
+								.toList()
+						)
+					}
+					_searchResultsFlow.value = results.filterNotNull()
 				}
-			}.awaitAll()
+			}.joinAll()
 		}
 
 		return true

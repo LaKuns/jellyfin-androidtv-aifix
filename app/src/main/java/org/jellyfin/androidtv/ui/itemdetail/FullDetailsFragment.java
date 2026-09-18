@@ -8,6 +8,7 @@ import android.graphics.Point;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.Looper;
 import android.util.DisplayMetrics;
 import android.view.Gravity;
 import android.view.KeyEvent;
@@ -25,6 +26,7 @@ import androidx.fragment.app.Fragment;
 import androidx.leanback.app.RowsSupportFragment;
 import androidx.leanback.widget.ArrayObjectAdapter;
 import androidx.leanback.widget.ClassPresenterSelector;
+import androidx.leanback.widget.FocusHighlight;
 import androidx.leanback.widget.HeaderItem;
 import androidx.leanback.widget.ListRow;
 import androidx.leanback.widget.OnItemViewClickedListener;
@@ -57,6 +59,7 @@ import org.jellyfin.androidtv.ui.browsing.BrowsingUtils;
 import org.jellyfin.androidtv.ui.itemhandling.BaseRowItem;
 import org.jellyfin.androidtv.ui.itemhandling.ItemLauncher;
 import org.jellyfin.androidtv.ui.itemhandling.ItemRowAdapter;
+import org.jellyfin.androidtv.ui.itemhandling.ItemRowAdapterHelperKt;
 import org.jellyfin.androidtv.ui.livetv.TvManager;
 import org.jellyfin.androidtv.ui.navigation.Destinations;
 import org.jellyfin.androidtv.ui.navigation.NavigationRepository;
@@ -72,6 +75,7 @@ import org.jellyfin.androidtv.util.DateTimeExtensionsKt;
 import org.jellyfin.androidtv.util.ImageHelper;
 import org.jellyfin.androidtv.util.KeyProcessor;
 import org.jellyfin.androidtv.util.MarkdownRenderer;
+import org.jellyfin.androidtv.util.PerformanceProfile;
 import org.jellyfin.androidtv.util.PlaybackHelper;
 import org.jellyfin.androidtv.util.TimeUtils;
 import org.jellyfin.androidtv.util.Utils;
@@ -133,8 +137,9 @@ public class FullDetailsFragment extends Fragment implements RecordingIndicatorV
     private MyDetailsOverviewRow mDetailsOverviewRow;
     private CustomListRowPresenter mListRowPresenter;
 
-    private Handler mLoopHandler = new Handler();
+    private Handler mLoopHandler = new Handler(Looper.getMainLooper());
     private Runnable mClockLoop;
+    private boolean mSecondaryRowsLoaded = false;
 
     BaseItemDto mBaseItem;
 
@@ -192,10 +197,11 @@ public class FullDetailsFragment extends Fragment implements RecordingIndicatorV
                     return null;
                 });
 
+                cancelRowRetrievals();
                 mRowsAdapter.clear();
                 mRowsAdapter.add(mDetailsOverviewRow);
                 //re-retrieve the schedule after giving it a second to rebuild
-                new Handler().postDelayed(new Runnable() {
+                mLoopHandler.postDelayed(new Runnable() {
                     @Override
                     public void run() {
                         if (!getLifecycle().getCurrentState().isAtLeast(Lifecycle.State.STARTED))
@@ -233,7 +239,7 @@ public class FullDetailsFragment extends Fragment implements RecordingIndicatorV
         }
 
         //Update information that may have changed - delay slightly to allow changes to take on the server
-        new Handler().postDelayed(new Runnable() {
+        mLoopHandler.postDelayed(new Runnable() {
             @Override
             public void run() {
                 if (!getLifecycle().getCurrentState().isAtLeast(Lifecycle.State.STARTED)) return;
@@ -282,6 +288,27 @@ public class FullDetailsFragment extends Fragment implements RecordingIndicatorV
     public void onPause() {
         super.onPause();
         stopClock();
+    }
+
+    @Override
+    public void onDestroyView() {
+        cancelRowRetrievals();
+        mLoopHandler.removeCallbacksAndMessages(null);
+        super.onDestroyView();
+    }
+
+    private void cancelRowRetrievals() {
+        if (mRowsAdapter == null) return;
+
+        for (int i = 0; i < mRowsAdapter.size(); i++) {
+            Object value = mRowsAdapter.get(i);
+            if (!(value instanceof ListRow)) continue;
+
+            Object rowAdapter = ((ListRow) value).getAdapter();
+            if (rowAdapter instanceof ItemRowAdapter) {
+                ItemRowAdapterHelperKt.cancelRetrieval((ItemRowAdapter) rowAdapter);
+            }
+        }
     }
 
     @Override
@@ -472,13 +499,20 @@ public class FullDetailsFragment extends Fragment implements RecordingIndicatorV
 
             ClassPresenterSelector ps = new ClassPresenterSelector();
             ps.addClassPresenter(MyDetailsOverviewRow.class, mDorPresenter);
-            mListRowPresenter = new CustomListRowPresenter(Utils.convertDpToPixel(requireContext(), 10));
+            mListRowPresenter = new CustomListRowPresenter(
+                    Utils.convertDpToPixel(requireContext(), 10),
+                    PerformanceProfile.isLowPerformanceDevice(requireContext())
+                            ? FocusHighlight.ZOOM_FACTOR_NONE
+                            : FocusHighlight.ZOOM_FACTOR_MEDIUM
+            );
             ps.addClassPresenter(ListRow.class, mListRowPresenter);
+            cancelRowRetrievals();
             mRowsAdapter = new MutableObjectAdapter<Row>(ps);
             mRowsFragment.setAdapter(mRowsAdapter);
             mRowsAdapter.add(detailsOverviewRow);
 
             updateInfo(detailsOverviewRow.getItem());
+            mSecondaryRowsLoaded = false;
             addAdditionalRows(mRowsAdapter);
 
         }
@@ -509,7 +543,27 @@ public class FullDetailsFragment extends Fragment implements RecordingIndicatorV
         ListRow listRow = new ListRow(header, row);
         parent.add(listRow);
         row.setRow(listRow);
+        row.setRetrieveLifecycleOwner(this);
         row.Retrieve();
+    }
+
+    private void addDeferredItemRow(
+            MutableObjectAdapter<Row> parent,
+            ItemRowAdapter row,
+            int index,
+            String headerText,
+            long delayMs
+    ) {
+        HeaderItem header = new HeaderItem(index, headerText);
+        ListRow listRow = new ListRow(header, row);
+        parent.add(listRow);
+        row.setRow(listRow);
+        row.setRetrieveLifecycleOwner(this);
+        mLoopHandler.postDelayed(() -> {
+            if (getLifecycle().getCurrentState().isAtLeast(Lifecycle.State.STARTED)) {
+                row.Retrieve();
+            }
+        }, delayMs);
     }
 
     protected void addAdditionalRows(MutableObjectAdapter<Row> adapter) {
@@ -572,18 +626,18 @@ public class FullDetailsFragment extends Fragment implements RecordingIndicatorV
                 addInfoRows(adapter);
                 break;
             case PERSON:
-                ItemRowAdapter personMoviesAdapter = new ItemRowAdapter(requireContext(), BrowsingUtils.createPersonItemsRequest(mBaseItem.getId(), BaseItemKind.MOVIE), 100, false, new CardPresenter(), adapter);
+                ItemRowAdapter personMoviesAdapter = new ItemRowAdapter(requireContext(), BrowsingUtils.createPersonItemsRequest(mBaseItem.getId(), BaseItemKind.MOVIE), 32, false, new CardPresenter(), adapter);
                 addItemRow(adapter, personMoviesAdapter, 0, getString(R.string.lbl_movies));
 
-                ItemRowAdapter personSeriesAdapter = new ItemRowAdapter(requireContext(), BrowsingUtils.createPersonItemsRequest(mBaseItem.getId(), BaseItemKind.SERIES), 100, false, new CardPresenter(), adapter);
+                ItemRowAdapter personSeriesAdapter = new ItemRowAdapter(requireContext(), BrowsingUtils.createPersonItemsRequest(mBaseItem.getId(), BaseItemKind.SERIES), 32, false, new CardPresenter(), adapter);
                 addItemRow(adapter, personSeriesAdapter, 1, getString(R.string.lbl_tv_series));
 
-                ItemRowAdapter personEpisodesAdapter = new ItemRowAdapter(requireContext(), BrowsingUtils.createPersonItemsRequest(mBaseItem.getId(), BaseItemKind.EPISODE), 100, false, new CardPresenter(), adapter);
+                ItemRowAdapter personEpisodesAdapter = new ItemRowAdapter(requireContext(), BrowsingUtils.createPersonItemsRequest(mBaseItem.getId(), BaseItemKind.EPISODE), 32, false, new CardPresenter(), adapter);
                 addItemRow(adapter, personEpisodesAdapter, 2, getString(R.string.lbl_episodes));
 
                 break;
             case MUSIC_ARTIST:
-                ItemRowAdapter artistAlbumsAdapter = new ItemRowAdapter(requireContext(),  BrowsingUtils.createArtistItemsRequest(mBaseItem.getId(), BaseItemKind.MUSIC_ALBUM), 100, false, new CardPresenter(), adapter);
+                ItemRowAdapter artistAlbumsAdapter = new ItemRowAdapter(requireContext(),  BrowsingUtils.createArtistItemsRequest(mBaseItem.getId(), BaseItemKind.MUSIC_ALBUM), 32, false, new CardPresenter(), adapter);
                 addItemRow(adapter, artistAlbumsAdapter, 0, getString(R.string.lbl_albums));
 
                 break;
@@ -593,22 +647,6 @@ public class FullDetailsFragment extends Fragment implements RecordingIndicatorV
 
                 ItemRowAdapter seasonsAdapter = new ItemRowAdapter(requireContext(), BrowsingUtils.createSeasonsRequest(mBaseItem.getId()), new CardPresenter(), adapter);
                 addItemRow(adapter, seasonsAdapter, 1, getString(R.string.lbl_seasons));
-
-                //Specials
-                if (mBaseItem.getSpecialFeatureCount() != null && mBaseItem.getSpecialFeatureCount() > 0) {
-                    addItemRow(adapter, new ItemRowAdapter(requireContext(), new GetSpecialsRequest(mBaseItem.getId()), new CardPresenter(), adapter), 3, getString(R.string.lbl_specials));
-                }
-
-                ItemRowAdapter upcomingAdapter = new ItemRowAdapter(requireContext(), BrowsingUtils.createUpcomingEpisodesRequest(mBaseItem.getId()), new CardPresenter(), adapter);
-                addItemRow(adapter, upcomingAdapter, 2, getString(R.string.lbl_upcoming));
-
-                if (mBaseItem.getPeople() != null && !mBaseItem.getPeople().isEmpty()) {
-                    ItemRowAdapter seriesCastAdapter = new ItemRowAdapter(mBaseItem.getPeople(), requireContext(), new CardPresenter(true, 130), adapter);
-                    addItemRow(adapter, seriesCastAdapter, 3, getString(R.string.lbl_cast_crew));
-                }
-
-                ItemRowAdapter similarAdapter = new ItemRowAdapter(requireContext(), BrowsingUtils.createSimilarItemsRequest(mBaseItem.getId()), QueryType.SimilarSeries, new CardPresenter(), adapter);
-                addItemRow(adapter, similarAdapter, 4, getString(R.string.lbl_more_like_this));
                 break;
 
             case EPISODE:
@@ -649,6 +687,33 @@ public class FullDetailsFragment extends Fragment implements RecordingIndicatorV
             default:
                 addInfoRows(adapter);
         }
+    }
+
+    /**
+     * Secondary series rows are deliberately requested only after the user
+     * reaches the details list. The season row is the primary interaction on
+     * this screen and should not compete with cast/similar/upcoming requests.
+     */
+    private void ensureSecondaryRowsLoaded() {
+        if (mSecondaryRowsLoaded || mBaseItem == null || mBaseItem.getType() != BaseItemKind.SERIES || mRowsAdapter == null) {
+            return;
+        }
+
+        mSecondaryRowsLoaded = true;
+        if (mBaseItem.getSpecialFeatureCount() != null && mBaseItem.getSpecialFeatureCount() > 0) {
+            addDeferredItemRow(mRowsAdapter, new ItemRowAdapter(requireContext(), new GetSpecialsRequest(mBaseItem.getId()), new CardPresenter(), mRowsAdapter), 3, getString(R.string.lbl_specials), 0);
+        }
+
+        ItemRowAdapter upcomingAdapter = new ItemRowAdapter(requireContext(), BrowsingUtils.createUpcomingEpisodesRequest(mBaseItem.getId()), new CardPresenter(), mRowsAdapter);
+        addDeferredItemRow(mRowsAdapter, upcomingAdapter, 2, getString(R.string.lbl_upcoming), 120);
+
+        if (mBaseItem.getPeople() != null && !mBaseItem.getPeople().isEmpty()) {
+            ItemRowAdapter seriesCastAdapter = new ItemRowAdapter(mBaseItem.getPeople(), requireContext(), new CardPresenter(true, 130), mRowsAdapter);
+            addDeferredItemRow(mRowsAdapter, seriesCastAdapter, 3, getString(R.string.lbl_cast_crew), 240);
+        }
+
+        ItemRowAdapter similarAdapter = new ItemRowAdapter(requireContext(), BrowsingUtils.createSimilarItemsRequest(mBaseItem.getId()), QueryType.SimilarSeries, new CardPresenter(), mRowsAdapter);
+        addDeferredItemRow(mRowsAdapter, similarAdapter, 4, getString(R.string.lbl_more_like_this), 360);
     }
 
     private void addInfoRows(MutableObjectAdapter<Row> adapter) {
@@ -1198,6 +1263,9 @@ public class FullDetailsFragment extends Fragment implements RecordingIndicatorV
         @Override
         public void onItemSelected(Presenter.ViewHolder itemViewHolder, Object item,
                                    RowPresenter.ViewHolder rowViewHolder, Row row) {
+            if (row instanceof ListRow && mRowsAdapter != null && mRowsAdapter.indexOf(row) >= 1) {
+                ensureSecondaryRowsLoaded();
+            }
             if (!(item instanceof BaseRowItem)) {
                 mCurrentItem = null;
             } else {

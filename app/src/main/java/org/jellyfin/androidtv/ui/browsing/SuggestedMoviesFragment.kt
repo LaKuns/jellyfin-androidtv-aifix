@@ -38,7 +38,7 @@ class SuggestedMoviesFragment : EnhancedBrowseFragment() {
 			for (item in response.items) {
 				val similar = GetSimilarItemsRequest(
 					itemId = item.id,
-					fields = ItemRepository.itemFields,
+					fields = ItemRepository.cardFields,
 					limit = 7,
 				)
 				mRows.add(BrowseRowDef(getString(R.string.because_you_watched, item.name), similar, QueryType.SimilarMovies))

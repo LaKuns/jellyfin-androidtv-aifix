@@ -6,6 +6,7 @@ import static org.koin.java.KoinJavaComponent.inject;
 import android.app.AlertDialog;
 import android.content.DialogInterface;
 import android.os.Handler;
+import android.os.SystemClock;
 import android.view.Display;
 import android.view.WindowManager;
 
@@ -20,6 +21,7 @@ import org.jellyfin.androidtv.data.model.DataRefreshService;
 import org.jellyfin.androidtv.preference.UserPreferences;
 import org.jellyfin.androidtv.preference.UserSettingPreferences;
 import org.jellyfin.androidtv.preference.constant.NextUpBehavior;
+import org.jellyfin.androidtv.preference.constant.PlaybackStrategy;
 import org.jellyfin.androidtv.preference.constant.RefreshRateSwitchingBehavior;
 import org.jellyfin.androidtv.preference.constant.StillWatchingBehavior;
 import org.jellyfin.androidtv.preference.constant.ZoomMode;
@@ -29,6 +31,7 @@ import org.jellyfin.androidtv.util.TimeUtils;
 import org.jellyfin.androidtv.util.Utils;
 import org.jellyfin.androidtv.util.apiclient.ReportingHelper;
 import org.jellyfin.androidtv.util.apiclient.Response;
+import org.jellyfin.androidtv.util.PerformanceProfile;
 import org.jellyfin.androidtv.util.profile.DeviceProfileKt;
 import org.jellyfin.androidtv.util.sdk.compat.JavaCompat;
 import org.jellyfin.sdk.api.client.ApiClient;
@@ -50,6 +53,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Locale;
 
 import kotlin.Lazy;
 import timber.log.Timber;
@@ -59,6 +63,8 @@ public class PlaybackController implements PlaybackControllerNotifiable {
     private final static long PROGRESS_REPORTING_INTERVAL = TimeUtils.secondsToMillis(3);
     // Frequency to report paused state
     private static final long PROGRESS_REPORTING_PAUSE_INTERVAL = TimeUtils.secondsToMillis(15);
+    private static final long INITIAL_SEEK_RETRY_INTERVAL_MS = 100L;
+    private static final long INITIAL_SEEK_TIMEOUT_MS = 5_000L;
 
     private Lazy<PlaybackManager> playbackManager = inject(PlaybackManager.class);
     private Lazy<UserPreferences> userPreferences = inject(UserPreferences.class);
@@ -113,6 +119,8 @@ public class PlaybackController implements PlaybackControllerNotifiable {
     private long mSeekPosition = -1;
     private boolean wasSeeking = false;
     private boolean finishedInitialSeek = false;
+    private Runnable mInitialSeekRunnable;
+    private long mInitialSeekDeadline;
 
     private LocalDateTime mCurrentProgramEnd = null;
     private LocalDateTime mCurrentProgramStart = null;
@@ -542,6 +550,16 @@ public class PlaybackController implements PlaybackControllerNotifiable {
         if (!isLiveTv && currentMediaSource != null) {
             internalOptions.setMediaSourceId(currentMediaSource.getId());
         }
+
+        // Keep high-load media away from the TV decoder on low-end devices. A direct stream
+        // still carries the original video bitrate, so only a real server transcode helps when
+        // the source is 4K or too expensive for the local decoder.
+        if (shouldPreferServerTranscoding(currentMediaSource)) {
+            Timber.i("Low-performance device: requesting server transcode for high-load media");
+            internalOptions.setEnableDirectPlay(false);
+            internalOptions.setEnableDirectStream(false);
+        }
+
         DeviceProfile internalProfile = DeviceProfileKt.createDeviceProfile(
                 mFragment.getContext(),
                 userPreferences.getValue(),
@@ -551,7 +569,48 @@ public class PlaybackController implements PlaybackControllerNotifiable {
         return internalOptions;
     }
 
+    private boolean shouldPreferServerTranscoding(@Nullable MediaSourceInfo mediaSource) {
+        if (mediaSource == null || mFragment == null
+                || !Boolean.TRUE.equals(mediaSource.getSupportsTranscoding())) {
+            return false;
+        }
+
+        PlaybackStrategy strategy = userPreferences.getValue().get(UserPreferences.Companion.getPlaybackStrategy());
+        if (strategy == PlaybackStrategy.PREFER_DIRECT) return false;
+        if (strategy == PlaybackStrategy.PREFER_SERVER_TRANSCODING) {
+            return mediaSource.getMediaStreams() != null
+                    && mediaSource.getMediaStreams().stream()
+                    .anyMatch(stream -> stream.getType() == MediaStreamType.VIDEO);
+        }
+        if (!PerformanceProfile.isLowPerformanceDevice(mFragment.requireContext())) return false;
+
+        Integer sourceBitrate = mediaSource.getBitrate();
+        if (sourceBitrate != null && sourceBitrate > PerformanceProfile.LOW_PERFORMANCE_MAX_VIDEO_BITRATE) {
+            return true;
+        }
+        if (mediaSource.getMediaStreams() == null) return false;
+
+        for (MediaStream stream : mediaSource.getMediaStreams()) {
+            if (stream.getType() != MediaStreamType.VIDEO) continue;
+
+            Integer width = stream.getWidth();
+            Integer height = stream.getHeight();
+            Integer bitrate = stream.getBitRate();
+            String codec = stream.getCodec() == null ? "" : stream.getCodec().toLowerCase(Locale.ROOT);
+            boolean codecIsExpensiveForLegacyTv = codec.contains("av1") || codec.contains("vp9");
+            boolean highFrameRate = stream.getRealFrameRate() != null && stream.getRealFrameRate() > 30.0;
+            return codecIsExpensiveForLegacyTv
+                    || (width != null && width > PerformanceProfile.LOW_PERFORMANCE_MAX_VIDEO_WIDTH)
+                    || (height != null && height > PerformanceProfile.LOW_PERFORMANCE_MAX_VIDEO_HEIGHT)
+                    || (bitrate != null && bitrate > PerformanceProfile.LOW_PERFORMANCE_MAX_VIDEO_BITRATE)
+                    || (highFrameRate && width != null && width >= 1920);
+        }
+
+        return false;
+    }
+
     private void playInternal(final BaseItemDto item, final Long position, final VideoOptions internalOptions) {
+        final long playbackInfoRequestStartedAt = SystemClock.elapsedRealtime();
         if (isLiveTv) {
             updateTvProgramInfo();
             TvManager.setLastLiveTvChannel(item.getId());
@@ -561,6 +620,8 @@ public class PlaybackController implements PlaybackControllerNotifiable {
                 @Override
                 public void onResponse(StreamInfo response) {
                     if (!isActive()) return;
+                    Timber.i("Playback info resolved in %d ms using %s",
+                            SystemClock.elapsedRealtime() - playbackInfoRequestStartedAt, response.getPlayMethod());
                     if (mVideoManager == null)
                         return;
                     mCurrentOptions = internalOptions;
@@ -570,6 +631,8 @@ public class PlaybackController implements PlaybackControllerNotifiable {
                 @Override
                 public void onError(Exception exception) {
                     if (!isActive()) return;
+                    Timber.e(exception, "Playback info failed after %d ms",
+                            SystemClock.elapsedRealtime() - playbackInfoRequestStartedAt);
                     handlePlaybackInfoError(exception);
                 }
             });
@@ -578,6 +641,8 @@ public class PlaybackController implements PlaybackControllerNotifiable {
                 @Override
                 public void onResponse(StreamInfo internalResponse) {
                     if (!isActive()) return;
+                    Timber.i("Playback info resolved in %d ms using %s",
+                            SystemClock.elapsedRealtime() - playbackInfoRequestStartedAt, internalResponse.getPlayMethod());
                     Timber.i("Internal player would %s", internalResponse.getPlayMethod().equals(PlayMethod.TRANSCODE) ? "transcode" : "direct stream");
                     if (mVideoManager == null)
                         return;
@@ -589,9 +654,16 @@ public class PlaybackController implements PlaybackControllerNotifiable {
                 @Override
                 public void onError(Exception exception) {
                     if (!isActive()) return;
-                    Timber.e(exception, "Unable to get stream info for internal player");
-                    if (mVideoManager == null)
-                        return;
+                    Timber.e(exception, "Unable to get stream info for internal player after %d ms",
+                            SystemClock.elapsedRealtime() - playbackInfoRequestStartedAt);
+                    // A direct-play request can fail before ExoPlayer is created, so the
+                    // normal player-error callback is never emitted. Retry through direct
+                    // stream and then full transcode instead of leaving the spinner running.
+                    if (mPlaybackState == PlaybackState.BUFFERING) {
+                        playerErrorEncountered();
+                    } else {
+                        handlePlaybackInfoError(exception);
+                    }
                 }
             });
         }
@@ -871,11 +943,12 @@ public class PlaybackController implements PlaybackControllerNotifiable {
     public void stop() {
         refreshCurrentPosition();
         Timber.i("stop called at %s", mCurrentPosition);
+        cancelInitialSeek();
         stopReportLoop();
         if (mPlaybackState != PlaybackState.IDLE && mPlaybackState != PlaybackState.UNDEFINED) {
             mPlaybackState = PlaybackState.IDLE;
 
-            if (mVideoManager != null && mVideoManager.isPlaying()) mVideoManager.stopPlayback();
+            if (mVideoManager != null && mVideoManager.isInitialized()) mVideoManager.stopPlayback();
             if (getCurrentlyPlayingItem() != null && mCurrentStreamInfo != null) {
                 Long mbPos = mCurrentPosition * 10000;
                 reportingHelper.getValue().reportStopped(mFragment, getCurrentlyPlayingItem(), mCurrentStreamInfo, mbPos);
@@ -913,6 +986,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
     }
 
     private void clearPlaybackSessionOptions() {
+        cancelInitialSeek();
         mDefaultAudioIndex = -1;
         mSeekPosition = -1;
         finishedInitialSeek = false;
@@ -1162,22 +1236,43 @@ public class PlaybackController implements PlaybackControllerNotifiable {
     }
 
     private void initialSeek(final long position) {
-        mHandler.post(new Runnable() {
+        cancelInitialSeek();
+        mInitialSeekDeadline = SystemClock.uptimeMillis() + INITIAL_SEEK_TIMEOUT_MS;
+        mInitialSeekRunnable = new Runnable() {
             @Override
             public void run() {
-                if (mVideoManager == null)
+                if (mVideoManager == null) {
+                    mInitialSeekRunnable = null;
                     return;
+                }
                 if (mVideoManager.getDuration() <= 0) {
-                    // use mVideoManager.getDuration here for accurate results
-                    // wait until we have valid duration
-                    mHandler.postDelayed(this, 25);
+                    // Use the player timeline when it becomes available, but
+                    // never keep a 25ms polling loop alive indefinitely.
+                    if (SystemClock.uptimeMillis() >= mInitialSeekDeadline) {
+                        Timber.w("Initial seek timed out while duration was unavailable");
+                        mInitialSeekRunnable = null;
+                        finishedInitialSeek = true;
+                        stopSpinner();
+                        return;
+                    }
+                    mHandler.postDelayed(this, INITIAL_SEEK_RETRY_INTERVAL_MS);
                 } else if (mVideoManager.isSeekable()) {
+                    mInitialSeekRunnable = null;
                     seek(position);
                 } else {
+                    mInitialSeekRunnable = null;
                     finishedInitialSeek = true;
                 }
             }
-        });
+        };
+        mHandler.post(mInitialSeekRunnable);
+    }
+
+    private void cancelInitialSeek() {
+        if (mHandler != null && mInitialSeekRunnable != null) {
+            mHandler.removeCallbacks(mInitialSeekRunnable);
+            mInitialSeekRunnable = null;
+        }
     }
 
     private void itemComplete() {

@@ -5,6 +5,8 @@ import androidx.leanback.widget.Presenter
 import androidx.leanback.widget.PresenterSelector
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListUpdateCallback
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * A leanback ObjectAdapter using a Kotlin list as backend. Implements Iterable to allow collection
@@ -12,6 +14,7 @@ import androidx.recyclerview.widget.ListUpdateCallback
  */
 open class MutableObjectAdapter<T : Any> : ObjectAdapter, Iterable<T> {
 	private val data = mutableListOf<T>()
+	private var mutationGeneration = 0L
 
 	// Constructors
 	constructor(presenterSelector: PresenterSelector) : super(presenterSelector)
@@ -27,16 +30,28 @@ open class MutableObjectAdapter<T : Any> : ObjectAdapter, Iterable<T> {
 
 	// Custom
 	fun add(element: T) {
+		mutationGeneration++
 		data.add(element)
 		notifyItemRangeInserted(data.size - 1, 1)
 	}
 
+	fun addAll(elements: Collection<T>) {
+		if (elements.isEmpty()) return
+
+		mutationGeneration++
+		val start = data.size
+		data.addAll(elements)
+		notifyItemRangeInserted(start, elements.size)
+	}
+
 	fun add(index: Int, element: T) {
+		mutationGeneration++
 		data.add(index, element)
 		notifyItemRangeInserted(index, 1)
 	}
 
 	fun set(index: Int, element: T) {
+		mutationGeneration++
 		data.set(index, element)
 		notifyItemRangeChanged(index, 1)
 	}
@@ -57,6 +72,7 @@ open class MutableObjectAdapter<T : Any> : ObjectAdapter, Iterable<T> {
 				areContentsTheSame(data[oldItemPosition], items[newItemPosition])
 		})
 
+		mutationGeneration++
 		data.clear()
 		data.addAll(items)
 
@@ -68,10 +84,52 @@ open class MutableObjectAdapter<T : Any> : ObjectAdapter, Iterable<T> {
 		})
 	}
 
+	/**
+	 * Calculates an expensive list diff away from the UI thread. The actual
+	 * adapter mutation and notifications are still performed on the main
+	 * thread, and stale results are discarded if another update won the race.
+	 */
+	suspend fun replaceAllAsync(
+		items: List<T>,
+		areItemsTheSame: (old: T, new: T) -> Boolean = { old, new -> old == new },
+		areContentsTheSame: (old: T, new: T) -> Boolean = { old, new -> old == new },
+	): Boolean {
+		val oldItems = data.toList()
+		val generation = mutationGeneration
+		val diff = withContext(Dispatchers.Default) {
+			DiffUtil.calculateDiff(object : DiffUtil.Callback() {
+				override fun getOldListSize(): Int = oldItems.size
+				override fun getNewListSize(): Int = items.size
+
+				override fun areItemsTheSame(oldItemPosition: Int, newItemPosition: Int): Boolean =
+					areItemsTheSame(oldItems[oldItemPosition], items[newItemPosition])
+
+				override fun areContentsTheSame(oldItemPosition: Int, newItemPosition: Int): Boolean =
+					areContentsTheSame(oldItems[oldItemPosition], items[newItemPosition])
+			})
+		}
+
+		return withContext(Dispatchers.Main.immediate) {
+			if (generation != mutationGeneration) return@withContext false
+
+			mutationGeneration++
+			data.clear()
+			data.addAll(items)
+			diff.dispatchUpdatesTo(object : ListUpdateCallback {
+				override fun onInserted(position: Int, count: Int) = notifyItemRangeInserted(position, count)
+				override fun onRemoved(position: Int, count: Int) = notifyItemRangeRemoved(position, count)
+				override fun onMoved(fromPosition: Int, toPosition: Int) = notifyItemMoved(fromPosition, toPosition)
+				override fun onChanged(position: Int, count: Int, payload: Any?) = notifyItemRangeChanged(position, count, payload)
+			})
+			true
+		}
+	}
+
 	fun clear() {
 		val size = data.size
 		if (size == 0) return
 
+		mutationGeneration++
 		notifyItemRangeRemoved(0, size)
 		data.clear()
 	}
@@ -85,6 +143,7 @@ open class MutableObjectAdapter<T : Any> : ObjectAdapter, Iterable<T> {
 	fun removeAt(index: Int, length: Int = 1): Boolean {
 		if (index < 0 || index >= data.size) return false
 
+		mutationGeneration++
 		data.subList(index, index + length).clear()
 		notifyItemRangeRemoved(index, length)
 

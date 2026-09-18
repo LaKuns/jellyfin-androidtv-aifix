@@ -40,6 +40,14 @@ open class BaseItemDtoBaseRowItem @JvmOverloads constructor(
 	selectAction = selectAction,
 	baseItem = item,
 ) {
+	fun getEpisodeNumberLabel(): String? {
+		if (baseItem?.type != BaseItemKind.EPISODE) return null
+		val start = baseItem?.indexNumber ?: return null
+		val startLabel = start.toString().padStart(2, '0')
+		val end = baseItem?.indexNumberEnd
+		return if (end != null && end != start) "$startLabel–${end.toString().padStart(2, '0')}" else startLabel
+	}
+
 	override val showCardInfoOverlay
 		get() = when (baseItem?.type) {
 			BaseItemKind.FOLDER,

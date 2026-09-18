@@ -3,12 +3,14 @@ package org.jellyfin.androidtv.ui.home
 import android.content.Context
 import androidx.leanback.widget.HeaderItem
 import androidx.leanback.widget.ListRow
+import androidx.leanback.widget.Presenter
 import androidx.leanback.widget.Row
 import androidx.lifecycle.LifecycleCoroutineScope
 import org.jellyfin.androidtv.R
 import org.jellyfin.androidtv.ui.playback.AudioQueueBaseRowAdapter
 import org.jellyfin.androidtv.ui.playback.MediaManager
 import org.jellyfin.androidtv.ui.presentation.CardPresenter
+import org.jellyfin.androidtv.ui.presentation.LowPerformanceCardPresenter
 import org.jellyfin.androidtv.ui.presentation.MutableObjectAdapter
 import org.jellyfin.playback.core.PlaybackManager
 
@@ -18,12 +20,14 @@ class HomeFragmentNowPlayingRow(
 	private val mediaManager: MediaManager,
 ) : HomeFragmentRow {
 	private var row: ListRow? = null
+	private var presenter: Presenter? = null
 
 	override fun addToRowsAdapter(
 		context: Context,
-		cardPresenter: CardPresenter,
+		cardPresenter: Presenter,
 		rowsAdapter: MutableObjectAdapter<Row>
 	) {
+		presenter = cardPresenter.takeIf { it is LowPerformanceCardPresenter }
 		update(context, rowsAdapter)
 	}
 
@@ -32,7 +36,11 @@ class HomeFragmentNowPlayingRow(
 			// Ensure row exists
 			if (row == null) row = ListRow(
 				HeaderItem(context.getString(R.string.lbl_now_playing)),
-				AudioQueueBaseRowAdapter(playbackManager, lifecycleScope)
+				AudioQueueBaseRowAdapter(
+					playbackManager,
+					lifecycleScope,
+					presenter ?: CardPresenter(true, 140),
+				)
 			)
 			// Add row if it wasn't added already
 			if (!rowsAdapter.contains(row!!)) rowsAdapter.add(0, row!!)

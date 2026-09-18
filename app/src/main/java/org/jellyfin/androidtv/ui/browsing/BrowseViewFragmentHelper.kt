@@ -28,7 +28,7 @@ fun EnhancedBrowseFragment.getLiveTvRecordingsAndTimers(
 		runCatching {
 			val recordings = async(Dispatchers.IO) {
 				api.liveTvApi.getRecordings(
-					fields = ItemRepository.itemFields,
+					fields = ItemRepository.cardFields,
 					enableImages = true,
 					limit = 40,
 				).content

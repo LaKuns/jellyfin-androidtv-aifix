@@ -108,7 +108,10 @@ class PlaybackManager(
 					maxAudioChannels = options.maxAudioChannels,
 					audioStreamIndex = options.audioStreamIndex.takeIf { it != null && it >= 0 },
 					subtitleStreamIndex = options.subtitleStreamIndex,
-					allowVideoStreamCopy = true,
+					// When both direct modes are disabled we explicitly requested a real video
+					// transcode. Keeping this true would let the server copy a high-bitrate
+					// video stream into the HLS container and leave the TV decoder overloaded.
+					allowVideoStreamCopy = options.enableDirectPlay || options.enableDirectStream,
 					allowAudioStreamCopy = true,
 					autoOpenLiveStream = true,
 					alwaysBurnInSubtitleWhenTranscoding = options.alwaysBurnInSubtitleWhenTranscoding,

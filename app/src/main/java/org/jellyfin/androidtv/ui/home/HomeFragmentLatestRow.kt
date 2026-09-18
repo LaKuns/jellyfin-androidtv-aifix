@@ -1,14 +1,15 @@
 package org.jellyfin.androidtv.ui.home
 
 import android.content.Context
+import androidx.leanback.widget.Presenter
 import androidx.leanback.widget.Row
 import org.jellyfin.androidtv.R
 import org.jellyfin.androidtv.auth.repository.UserRepository
 import org.jellyfin.androidtv.constant.ChangeTriggerType
 import org.jellyfin.androidtv.data.repository.ItemRepository
 import org.jellyfin.androidtv.ui.browsing.BrowseRowDef
-import org.jellyfin.androidtv.ui.presentation.CardPresenter
 import org.jellyfin.androidtv.ui.presentation.MutableObjectAdapter
+import org.jellyfin.androidtv.util.PerformanceProfile
 import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.CollectionType
 import org.jellyfin.sdk.model.api.request.GetLatestMediaRequest
@@ -17,9 +18,10 @@ class HomeFragmentLatestRow(
 	private val userRepository: UserRepository,
 	private val userViews: Collection<BaseItemDto>,
 ) : HomeFragmentRow {
-	override fun addToRowsAdapter(context: Context, cardPresenter: CardPresenter, rowsAdapter: MutableObjectAdapter<Row>) {
+	override fun addToRowsAdapter(context: Context, cardPresenter: Presenter, rowsAdapter: MutableObjectAdapter<Row>) {
 		// Get configuration (to find excluded items)
 		val configuration = userRepository.currentUser.value?.configuration
+		val itemLimit = if (PerformanceProfile.isLowPerformanceDevice(context)) LOW_PERFORMANCE_ITEM_LIMIT else ITEM_LIMIT
 
 		// Create a list of views to include
 		val latestItemsExcludes = configuration?.latestItemsExcludes.orEmpty()
@@ -32,7 +34,7 @@ class HomeFragmentLatestRow(
 					imageTypeLimit = 1,
 					parentId = item.id,
 					groupItems = true,
-					limit = ITEM_LIMIT,
+					limit = itemLimit,
 				)
 
 				val title = context.getString(R.string.lbl_latest_in, item.name)
@@ -54,5 +56,6 @@ class HomeFragmentLatestRow(
 
 		// Maximum amount of items loaded for a row
 		private const val ITEM_LIMIT = 50
+		private const val LOW_PERFORMANCE_ITEM_LIMIT = 15
 	}
 }
