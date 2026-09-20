@@ -91,6 +91,8 @@ public class VideoManager {
     private PlaybackOverlayFragmentHelper _helper;
     public ExoPlayer mExoPlayer;
     private PlayerView mExoPlayerView;
+    /** Indeterminate spinner drawn over the video surface while nothing can be shown yet. */
+    private View bufferingView;
     private Handler mHandler = new Handler();
 
     private long mMetaDuration = -1;
@@ -133,6 +135,7 @@ public class VideoManager {
 
         mExoPlayerView = view.findViewById(R.id.exoPlayerView);
         mExoPlayerView.setPlayer(mExoPlayer);
+        bufferingView = view.findViewById(R.id.playback_buffering);
         int strokeColor = userPreferences.get(UserPreferences.Companion.getSubtitleTextStrokeColor()).intValue();
         int textWeight = userPreferences.get(UserPreferences.Companion.getSubtitlesTextWeight());
         CaptionStyleCompat subtitleStyle = new CaptionStyleCompat(
@@ -158,6 +161,7 @@ public class VideoManager {
                 Timber.e(error, "Player failed during %s startup after %d ms (buffered=%d ms)",
                         currentPlayMethod, startupElapsedMs(), mExoPlayer.getBufferedPosition());
                 cancelStartupBufferingTimeout();
+                setBufferingVisible(false);
                 if (mPlaybackControllerNotifiable != null) mPlaybackControllerNotifiable.onError();
                 stopProgressLoop();
             }
@@ -182,17 +186,22 @@ public class VideoManager {
                     }
                     Timber.d("Player is buffering using %s after %d ms (buffered=%d ms)",
                             currentPlayMethod, startupElapsedMs(), mExoPlayer.getBufferedPosition());
+                    setBufferingVisible(true);
                     scheduleStartupBufferingTimeout();
                 } else if (playbackState == Player.STATE_READY) {
                     playbackReady = true;
+                    setBufferingVisible(false);
                     Timber.i("Playback startup ready using %s in %d ms (initial buffering=%d ms)",
                             currentPlayMethod,
                             startupElapsedMs(),
                             firstBufferingStartedAtMs < 0 ? 0L : SystemClock.elapsedRealtime() - firstBufferingStartedAtMs);
                     cancelStartupBufferingTimeout();
+                } else if (playbackState == Player.STATE_IDLE) {
+                    setBufferingVisible(false);
                 }
 
                 if (playbackState == Player.STATE_ENDED) {
+                    setBufferingVisible(false);
                     if (mPlaybackControllerNotifiable != null) mPlaybackControllerNotifiable.onCompletion();
                     stopProgressLoop();
                 }
@@ -400,6 +409,7 @@ public class VideoManager {
     public void stopPlayback() {
         cancelStartupBufferingTimeout();
         playbackReady = false;
+        setBufferingVisible(false);
         if (mExoPlayer != null) {
             mExoPlayer.stop();
 
@@ -449,6 +459,9 @@ public class VideoManager {
         mediaPrepareStartedAtMs = SystemClock.elapsedRealtime();
         firstBufferingStartedAtMs = -1L;
         cancelStartupBufferingTimeout();
+        // The video surface renders black until the first frame arrives. Show the spinner now,
+        // before the player even reports STATE_BUFFERING, so the user always gets feedback.
+        setBufferingVisible(true);
 
         try {
             // Add external subtitles
@@ -767,6 +780,18 @@ public class VideoManager {
             mHandler.removeCallbacks(startupBufferingTimeout);
             startupBufferingTimeout = null;
         }
+    }
+
+    /**
+     * Show or hide the buffering spinner over the video surface.
+     */
+    private void setBufferingVisible(boolean visible) {
+        if (bufferingView == null) return;
+
+        int target = visible ? View.VISIBLE : View.GONE;
+        if (bufferingView.getVisibility() == target) return;
+
+        bufferingView.setVisibility(target);
     }
 
     private long startupElapsedMs() {

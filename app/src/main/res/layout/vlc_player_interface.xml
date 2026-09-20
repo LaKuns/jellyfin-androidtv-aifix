@@ -31,6 +31,20 @@
             android:layout_height="match_parent"
             app:use_controller="false" />
 
+        <!--
+            Shown while the player is buffering (waiting for the first segment of a transcode,
+            seeking, network hiccup, ...). Without it the video surface renders plain black and
+            the user cannot tell "loading" from "frozen". It is placed above the video surface
+            but below the overlay controls.
+        -->
+        <ProgressBar
+            android:id="@+id/playback_buffering"
+            style="?android:attr/progressBarStyleLarge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:visibility="gone" />
+
         <androidx.fragment.app.FragmentContainerView
             android:id="@+id/leanback_fragment"
             android:name="org.jellyfin.androidtv.ui.playback.overlay.LeanbackOverlayFragment"

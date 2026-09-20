@@ -302,9 +302,17 @@ class UserPreferences(context: Context) : SharedPreferenceStore(
 		var playerZoomMode = enumPreference("player_zoom_mode", ZoomMode.FIT)
 
 		/**
-		 * Enable libass.
+		 * Render ASS/SSA subtitles on the client with libass instead of relying on the
+		 * server to burn them in.
+		 *
+		 * Defaults to enabled. When disabled, the device profile only offers ENCODE for
+		 * ASS/SSA (see subtitleProfile in deviceProfile.kt), so the server has to burn the
+		 * subtitles into the video. Since burn-in requires a full video re-encode, this
+		 * forces every ASS episode (most anime releases) to transcode and makes playback
+		 * start very slowly. With libass enabled the subtitles can be embedded or external,
+		 * which keeps the stream on direct play and starts instantly.
 		 */
-		var assDirectPlay = booleanPreference("libass_enabled", false)
+		var assDirectPlay = booleanPreference("libass_enabled", true)
 
 		/**
 		 * Always burn in subtitles when transcoding.

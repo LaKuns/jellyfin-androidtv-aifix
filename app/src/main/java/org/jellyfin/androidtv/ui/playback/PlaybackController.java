@@ -91,6 +91,12 @@ public class PlaybackController implements PlaybackControllerNotifiable {
     protected VideoOptions mCurrentOptions;
     private int mDefaultAudioIndex = -1;
     protected boolean burningSubs = false;
+    /**
+     * Set when the previous attempt failed while the server was burning subtitles into the
+     * video. The next attempt then ignores the saved subtitle preference so it can actually
+     * succeed instead of requesting the same (failing) burn-in transcode again.
+     */
+    private boolean dropSubtitlesForRetry = false;
 
     // The server does not update the subtitle delivery method when alwaysBurnInSubtitleWhenTranscoding
     // is set, so we need to assume subs are burned in when transcoding with the option enabled.
@@ -274,6 +280,20 @@ public class PlaybackController implements PlaybackControllerNotifiable {
         if (playbackRetries < 3) {
             if (mFragment != null)
                 Utils.showToast(mFragment.getContext(), mFragment.getString(R.string.player_error));
+
+            // Burning subtitles in requires a full video transcode, which is slow and fragile on
+            // the server: if the encoder dies, the client waits forever for the first segment.
+            // Retrying the identical request would just fail again, so drop the subtitles for
+            // this attempt - the video can then be direct played and starts right away.
+            if (burningSubs) {
+                Timber.w("Retry %d: dropping subtitles and disabling burn-in", playbackRetries);
+                burningSubs = false;
+                dropSubtitlesForRetry = true;
+                stop();
+                play(mCurrentPosition, -1);
+                return;
+            }
+
             Timber.i("Player error encountered - retrying");
             stop();
             play(mCurrentPosition);
@@ -736,6 +756,16 @@ public class PlaybackController implements PlaybackControllerNotifiable {
             // No saved preference, use server default
             mCurrentOptions.setSubtitleStreamIndex(response.getMediaSource().getDefaultSubtitleStreamIndex());
         }
+
+        // The previous attempt failed while the server was burning subtitles into the video, so
+        // this attempt was started without them. Make sure the preference resolution above does
+        // not silently select the stream again and re-trigger the failing burn-in.
+        if (dropSubtitlesForRetry) {
+            dropSubtitlesForRetry = false;
+            mCurrentOptions.setSubtitleStreamIndex(null);
+            Timber.i("Subtitle selection skipped for this attempt to avoid burn-in");
+        }
+
         setDefaultAudioIndex(response);
         Timber.i("default audio index set to %s remote default %s", mDefaultAudioIndex, response.getMediaSource().getDefaultAudioStreamIndex());
         Timber.i("default sub index set to %s remote default %s", mCurrentOptions.getSubtitleStreamIndex(), response.getMediaSource().getDefaultSubtitleStreamIndex());
@@ -757,27 +787,33 @@ public class PlaybackController implements PlaybackControllerNotifiable {
             mVideoManager.setMediaStreamInfo(api.getValue(), response);
         }
 
-        PlaybackControllerHelperKt.applyMediaSegments(this, item, () -> {
-            // Set video start delay
-            long videoStartDelay = userPreferences.getValue().get(UserPreferences.Companion.getVideoStartDelay());
-            if (videoStartDelay > 0) {
-                mHandler.postDelayed(new Runnable() {
-                    @Override
-                    public void run() {
-                        if (mVideoManager != null) {
-                            mVideoManager.start();
-                        }
+        // Start playback right away. The intro/outro segment lookup below is a network request and
+        // used to gate start(), which kept the screen black until that request finished.
+        startVideoPlayback(item, response, mbPos);
+
+        // Media segments are only used for the "skip intro" overlay, so resolve them in parallel
+        // with playback instead of blocking the first frame on them.
+        PlaybackControllerHelperKt.applyMediaSegments(this, item, () -> null);
+    }
+
+    private void startVideoPlayback(BaseItemDto item, StreamInfo response, Long mbPos) {
+        // Set video start delay
+        long videoStartDelay = userPreferences.getValue().get(UserPreferences.Companion.getVideoStartDelay());
+        if (videoStartDelay > 0) {
+            mHandler.postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    if (mVideoManager != null) {
+                        mVideoManager.start();
                     }
-                }, videoStartDelay);
-            } else {
-                mVideoManager.start();
-            }
+                }
+            }, videoStartDelay);
+        } else if (mVideoManager != null) {
+            mVideoManager.start();
+        }
 
-            dataRefreshService.getValue().setLastPlayedItem(item);
-            reportingHelper.getValue().reportStart(mFragment, PlaybackController.this, item, response, mbPos, false);
-
-            return null;
-        });
+        dataRefreshService.getValue().setLastPlayedItem(item);
+        reportingHelper.getValue().reportStart(mFragment, PlaybackController.this, item, response, mbPos, false);
     }
 
     public void startSpinner() {
