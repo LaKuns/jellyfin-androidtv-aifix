@@ -700,20 +700,46 @@ public class FullDetailsFragment extends Fragment implements RecordingIndicatorV
         }
 
         mSecondaryRowsLoaded = true;
-        if (mBaseItem.getSpecialFeatureCount() != null && mBaseItem.getSpecialFeatureCount() > 0) {
-            addDeferredItemRow(mRowsAdapter, new ItemRowAdapter(requireContext(), new GetSpecialsRequest(mBaseItem.getId()), new CardPresenter(), mRowsAdapter), 3, getString(R.string.lbl_specials), 0);
+
+        // Capture the current adapter so a stale post (e.g. after the item changed
+        // and buildRows() rebuilt the adapter) is discarded. In that case
+        // buildRows() has already reset mSecondaryRowsLoaded, so the next selection
+        // will schedule a fresh load for the new adapter.
+        final MutableObjectAdapter<Row> adapter = mRowsAdapter;
+
+        // onItemSelected() is dispatched by Leanback from inside the RecyclerView
+        // layout pass (GridLayoutManager#dispatchChildSelected). Adding rows to the
+        // adapter there calls notifyItemRangeInserted() while the RecyclerView is
+        // computing a layout, which throws an IllegalStateException. Post the
+        // additions so they run once the current layout pass has finished.
+        mLoopHandler.post(() -> {
+            // The rows adapter was rebuilt (item changed) or we were detached.
+            if (adapter != mRowsAdapter) return;
+            if (!isAdded() || !getLifecycle().getCurrentState().isAtLeast(Lifecycle.State.STARTED) || mBaseItem == null) {
+                // Allow a later selection to retry once the fragment is ready.
+                mSecondaryRowsLoaded = false;
+                return;
+            }
+
+            addSecondaryRows(adapter, mBaseItem);
+        });
+    }
+
+    private void addSecondaryRows(MutableObjectAdapter<Row> adapter, BaseItemDto item) {
+        if (item.getSpecialFeatureCount() != null && item.getSpecialFeatureCount() > 0) {
+            addDeferredItemRow(adapter, new ItemRowAdapter(requireContext(), new GetSpecialsRequest(item.getId()), new CardPresenter(), adapter), 3, getString(R.string.lbl_specials), 0);
         }
 
-        ItemRowAdapter upcomingAdapter = new ItemRowAdapter(requireContext(), BrowsingUtils.createUpcomingEpisodesRequest(mBaseItem.getId()), new CardPresenter(), mRowsAdapter);
-        addDeferredItemRow(mRowsAdapter, upcomingAdapter, 2, getString(R.string.lbl_upcoming), 120);
+        ItemRowAdapter upcomingAdapter = new ItemRowAdapter(requireContext(), BrowsingUtils.createUpcomingEpisodesRequest(item.getId()), new CardPresenter(), adapter);
+        addDeferredItemRow(adapter, upcomingAdapter, 2, getString(R.string.lbl_upcoming), 120);
 
-        if (mBaseItem.getPeople() != null && !mBaseItem.getPeople().isEmpty()) {
-            ItemRowAdapter seriesCastAdapter = new ItemRowAdapter(mBaseItem.getPeople(), requireContext(), new CardPresenter(true, 130), mRowsAdapter);
-            addDeferredItemRow(mRowsAdapter, seriesCastAdapter, 3, getString(R.string.lbl_cast_crew), 240);
+        if (item.getPeople() != null && !item.getPeople().isEmpty()) {
+            ItemRowAdapter seriesCastAdapter = new ItemRowAdapter(item.getPeople(), requireContext(), new CardPresenter(true, 130), adapter);
+            addDeferredItemRow(adapter, seriesCastAdapter, 3, getString(R.string.lbl_cast_crew), 240);
         }
 
-        ItemRowAdapter similarAdapter = new ItemRowAdapter(requireContext(), BrowsingUtils.createSimilarItemsRequest(mBaseItem.getId()), QueryType.SimilarSeries, new CardPresenter(), mRowsAdapter);
-        addDeferredItemRow(mRowsAdapter, similarAdapter, 4, getString(R.string.lbl_more_like_this), 360);
+        ItemRowAdapter similarAdapter = new ItemRowAdapter(requireContext(), BrowsingUtils.createSimilarItemsRequest(item.getId()), QueryType.SimilarSeries, new CardPresenter(), adapter);
+        addDeferredItemRow(adapter, similarAdapter, 4, getString(R.string.lbl_more_like_this), 360);
     }
 
     private void addInfoRows(MutableObjectAdapter<Row> adapter) {
