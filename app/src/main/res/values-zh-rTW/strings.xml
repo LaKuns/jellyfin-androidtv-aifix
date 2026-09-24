@@ -5,7 +5,7 @@
     <string name="lbl_song">歌曲</string>
     <string name="lbl_songs">歌曲</string>
     <string name="lbl_album">專輯</string>
-    <string name="lbl_episodes">集</string>
+    <string name="lbl_episodes">集數</string>
     <string name="lbl_enable_cinema_mode">劇院模式</string>
     <string name="sum_enable_cinema_mode">在電影開始前顯示可用的簡介和預覽</string>
     <string name="lbl_playlists">播放列表</string>

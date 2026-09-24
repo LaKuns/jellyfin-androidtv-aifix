@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -18,9 +19,11 @@ import org.jellyfin.androidtv.ui.player.base.rememberPlayerOverlayVisibility
 import org.jellyfin.androidtv.ui.player.base.toast.MediaToastRegistry
 import org.jellyfin.androidtv.ui.player.base.toast.MediaToasts
 import org.jellyfin.playback.core.PlaybackManager
+import org.jellyfin.playback.core.model.PlayState
 import org.jellyfin.playback.jellyfin.queue.baseItem
 import org.jellyfin.playback.jellyfin.queue.baseItemFlow
 import org.koin.compose.koinInject
+import kotlin.time.Duration.Companion.seconds
 
 @Composable
 fun VideoPlayerOverlay(
@@ -28,7 +31,11 @@ fun VideoPlayerOverlay(
 	playbackManager: PlaybackManager = koinInject(),
 	mediaToastRegistry: MediaToastRegistry,
 ) {
-	val visibilityState = rememberPlayerOverlayVisibility()
+	val playState by playbackManager.state.playState.collectAsState()
+	val visibilityState = rememberPlayerOverlayVisibility(timeout = if (playState == PlayState.PAUSED) null else 5.seconds)
+	LaunchedEffect(playState) {
+		if (playState == PlayState.PAUSED || playState == PlayState.PLAYING) visibilityState.show()
+	}
 	var showPlaybackInfo by remember { mutableStateOf(false) }
 
 	val entry by rememberQueueEntry(playbackManager)

@@ -4,7 +4,9 @@ import android.content.ActivityNotFoundException
 import android.view.View
 import android.widget.Toast
 import androidx.core.view.isVisible
+import androidx.leanback.widget.Row
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -14,6 +16,8 @@ import org.jellyfin.androidtv.data.repository.ItemMutationRepository
 import org.jellyfin.androidtv.data.repository.ItemRepository
 import org.jellyfin.androidtv.ui.navigation.Destinations
 import org.jellyfin.androidtv.ui.navigation.NavigationRepository
+import org.jellyfin.androidtv.ui.presentation.MutableObjectAdapter
+import org.jellyfin.androidtv.util.PerformanceProfile
 import org.jellyfin.androidtv.util.TimeUtils
 import org.jellyfin.androidtv.util.apiclient.getSeriesOverview
 import org.jellyfin.androidtv.util.popupMenu
@@ -234,6 +238,122 @@ fun FullDetailsFragment.getNextUpEpisode(callback: (BaseItemDto?) -> Unit) {
 		val nextUpEpisode = getNextUpEpisode()
 		callback(nextUpEpisode)
 	}
+}
+
+/** Put a compact season/episode selector directly beneath the overview actions. */
+fun FullDetailsFragment.loadEpisodeSelection() {
+	val item = mBaseItem ?: return
+	val seriesId = if (item.type == BaseItemKind.SERIES) item.id else item.seriesId ?: return
+	val api by inject<ApiClient>()
+	val adapter = mRowsAdapter ?: return
+	val catalog = EpisodeCatalog(api, PerformanceProfile.isLowPerformanceDevice(requireContext()))
+	mEpisodeCatalog = catalog
+	mEpisodeSelectionJob?.cancel()
+	clearEpisodeSelectionPage()
+	showEpisodeMessage(getString(R.string.lbl_loading_elipses))
+	mEpisodeSelectionJob = lifecycleScope.launch {
+		try {
+			val seasons = catalog.seasons(seriesId)
+			if (adapter !== mRowsAdapter) return@launch
+			mEpisodeSeasons = seasons
+			// An unplayed series already requests Next Up for its main button. Start at season one
+			// here instead of duplicating that request on older devices.
+			val started = item.userData?.playedPercentage?.let { it > 0 } == true
+			val nextUp = if (item.type == BaseItemKind.SERIES && started) {
+				try {
+					getNextUpEpisode()
+				} catch (error: CancellationException) {
+					throw error
+				} catch (error: Exception) {
+					Timber.w(error, "Failed to resolve next up episode for selector")
+					null
+				}
+			} else null
+			val selected = seasons.firstOrNull { it.id == (item.seasonId ?: nextUp?.seasonId) }
+				?: seasons.firstOrNull()
+			if (selected == null) {
+				showEpisodeMessage(getString(R.string.lbl_no_items))
+				return@launch
+			}
+			if (adapter !== mRowsAdapter) return@launch
+			mSelectedSeasonId = selected.id
+			mHighlightedEpisodeId = if (item.type == BaseItemKind.EPISODE) item.id else nextUp?.id
+			showEpisodeSeasons(seasons, selected.id)
+			val highlightedNumber = (if (item.type == BaseItemKind.EPISODE) item.indexNumber else nextUp?.indexNumber) ?: 1
+			val start = ((highlightedNumber - 1).coerceAtLeast(0) / catalog.pageSize) * catalog.pageSize
+			mEpisodePageStart = start
+			loadEpisodePage(catalog, adapter, seriesId, selected.id, start)
+		} catch (error: CancellationException) {
+			throw error
+		} catch (error: Exception) {
+			Timber.w(error, "Failed to load episode selector")
+			if (adapter === mRowsAdapter) showEpisodeMessage(getString(R.string.msg_episode_selection_load_error))
+			if (adapter === mRowsAdapter) context?.let {
+				Toast.makeText(it, R.string.msg_episode_selection_load_error, Toast.LENGTH_SHORT).show()
+			}
+		}
+	}
+}
+
+fun FullDetailsFragment.selectEpisodeSeason(season: BaseItemDto) {
+	val item = mBaseItem ?: return
+	if (item.type != BaseItemKind.SERIES && item.seriesId == null) return
+	mSelectedSeasonId = season.id
+	mHighlightedEpisodeId = item.id.takeIf { item.type == BaseItemKind.EPISODE && item.seasonId == season.id }
+	mEpisodePageStart = 0
+	clearEpisodeSelectionPage()
+	mEpisodeSeasons?.let { showEpisodeSeasons(it, season.id) }
+	retryEpisodePage()
+}
+
+fun FullDetailsFragment.selectEpisodeRange(range: EpisodeRange) {
+	mEpisodePageStart = range.startIndex
+	retryEpisodePage()
+}
+
+fun FullDetailsFragment.retryEpisodePage() {
+	val item = mBaseItem ?: return
+	val seriesId = if (item.type == BaseItemKind.SERIES) item.id else item.seriesId ?: return
+	val seasonId = mSelectedSeasonId
+	val catalog = mEpisodeCatalog
+	if (seasonId == null || catalog == null) {
+		loadEpisodeSelection()
+		return
+	}
+	val adapter = mRowsAdapter ?: return
+	val startIndex = mEpisodePageStart
+	mEpisodeSelectionJob?.cancel()
+	showEpisodeMessage(getString(R.string.lbl_loading_elipses))
+	mEpisodeSelectionJob = lifecycleScope.launch {
+		try {
+			loadEpisodePage(catalog, adapter, seriesId, seasonId, startIndex)
+		} catch (error: CancellationException) {
+			throw error
+		} catch (error: Exception) {
+			Timber.w(error, "Failed to load episode page")
+			if (adapter === mRowsAdapter) showEpisodeMessage(getString(R.string.msg_episode_selection_load_error))
+			if (adapter === mRowsAdapter) context?.let {
+				Toast.makeText(it, R.string.msg_episode_selection_load_error, Toast.LENGTH_SHORT).show()
+			}
+		}
+	}
+}
+
+private suspend fun FullDetailsFragment.loadEpisodePage(
+	catalog: EpisodeCatalog,
+	adapter: MutableObjectAdapter<Row>,
+	seriesId: UUID,
+	seasonId: UUID,
+	startIndex: Int,
+) {
+	var page = catalog.episodes(seriesId, seasonId, startIndex)
+	if (page.items.isEmpty() && page.totalCount > 0 && startIndex > 0) {
+		page = catalog.episodes(seriesId, seasonId, 0)
+	}
+	if (adapter !== mRowsAdapter || mSelectedSeasonId != seasonId || mEpisodePageStart != startIndex) return
+	mEpisodePageStart = page.startIndex
+	showEpisodeRanges(page.ranges, page.startIndex)
+	showEpisodeNumbers(page.items, mHighlightedEpisodeId)
 }
 
 suspend fun FullDetailsFragment.getNextUpEpisode(): BaseItemDto? {

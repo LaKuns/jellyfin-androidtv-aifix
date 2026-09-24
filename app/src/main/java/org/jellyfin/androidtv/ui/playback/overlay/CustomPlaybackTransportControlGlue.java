@@ -39,11 +39,13 @@ import org.jellyfin.androidtv.ui.playback.overlay.action.PreviousLiveTvChannelAc
 import org.jellyfin.androidtv.ui.playback.overlay.action.RecordAction;
 import org.jellyfin.androidtv.ui.playback.overlay.action.RewindAction;
 import org.jellyfin.androidtv.ui.playback.overlay.action.SelectAudioAction;
+import org.jellyfin.androidtv.ui.playback.overlay.action.SelectEpisodeAction;
 import org.jellyfin.androidtv.ui.playback.overlay.action.SelectQualityAction;
 import org.jellyfin.androidtv.ui.playback.overlay.action.SkipNextAction;
 import org.jellyfin.androidtv.ui.playback.overlay.action.SkipPreviousAction;
 import org.jellyfin.androidtv.ui.playback.overlay.action.ZoomAction;
 import org.jellyfin.androidtv.util.DateTimeExtensionsKt;
+import org.jellyfin.sdk.model.api.BaseItemKind;
 import org.koin.java.KoinJavaComponent;
 
 import java.time.LocalDateTime;
@@ -63,6 +65,7 @@ public class CustomPlaybackTransportControlGlue extends PlaybackTransportControl
     private PlaybackSpeedAction playbackSpeedAction;
     private ZoomAction zoomAction;
     private ChapterAction chapterAction;
+    private SelectEpisodeAction selectEpisodeAction;
 
     // TV actions
     private PreviousLiveTvChannelAction previousLiveTvChannelAction;
@@ -204,6 +207,8 @@ public class CustomPlaybackTransportControlGlue extends PlaybackTransportControl
         zoomAction.setLabels(new String[]{context.getString(R.string.lbl_zoom)});
         chapterAction = new ChapterAction(context, this);
         chapterAction.setLabels(new String[]{context.getString(R.string.lbl_chapters)});
+        selectEpisodeAction = new SelectEpisodeAction(context, this);
+        selectEpisodeAction.setLabels(new String[]{context.getString(R.string.lbl_select_episode)});
 
         previousLiveTvChannelAction = new PreviousLiveTvChannelAction(context, this);
         previousLiveTvChannelAction.setLabels(new String[]{context.getString(R.string.lbl_prev_item)});
@@ -271,6 +276,12 @@ public class CustomPlaybackTransportControlGlue extends PlaybackTransportControl
 
         if (playerAdapter.hasNextItem()) {
             secondaryActionsAdapter.add(skipNextAction);
+        }
+
+        if (playbackController.getCurrentlyPlayingItem() != null
+                && playbackController.getCurrentlyPlayingItem().getType() == BaseItemKind.EPISODE
+                && playbackController.getCurrentlyPlayingItem().getSeriesId() != null) {
+            primaryActionsAdapter.add(selectEpisodeAction);
         }
 
         if (playerAdapter.hasChapters()) {

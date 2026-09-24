@@ -159,7 +159,14 @@
     <string name="lbl_playlists">播放列表</string>
     <string name="sum_enable_cinema_mode">在开始播放电影之前播放可用的介绍和预览</string>
     <string name="lbl_enable_cinema_mode">电影模式</string>
-    <string name="lbl_episodes">集</string>
+    <string name="lbl_episodes">集数</string>
+    <string name="lbl_select_episode">选择集数</string>
+    <string name="lbl_select_season">选择剧季</string>
+    <string name="lbl_episode_ranges">集数区间</string>
+    <string name="lbl_episode_range_selection">第%1$d–%2$d集</string>
+    <string name="lbl_retry_episode_selection">重试</string>
+    <string name="msg_episode_selection_load_error">集数加载失败，请重试。</string>
+    <string name="msg_episode_selection_play_error">切换剧集失败，请重试。</string>
     <string name="lbl_album">专辑</string>
     <string name="lbl_songs">歌曲</string>
     <string name="lbl_song">歌曲</string>

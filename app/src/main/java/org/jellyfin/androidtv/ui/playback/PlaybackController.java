@@ -1057,6 +1057,18 @@ public class PlaybackController implements PlaybackControllerNotifiable {
         }
     }
 
+    /** Jump to an episode selected outside the currently loaded queue. */
+    public void playEpisodeQueue(List<BaseItemDto> items) {
+        if (items == null || items.isEmpty()) return;
+        stop();
+        resetPlayerErrors();
+        mItems = items;
+        mCurrentIndex = 0;
+        videoQueueManager.getValue().setCurrentVideoQueue(items);
+        spinnerOff = false;
+        play(0);
+    }
+
     public void fastForward() {
         UserSettingPreferences prefs = KoinJavaComponent.<UserSettingPreferences>get(UserSettingPreferences.class);
         skip(prefs.get(UserSettingPreferences.Companion.getSkipForwardLength()));

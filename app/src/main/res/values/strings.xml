@@ -162,6 +162,13 @@
     <string name="lbl_songs">Songs</string>
     <string name="lbl_album">Album</string>
     <string name="lbl_episodes">Episodes</string>
+    <string name="lbl_select_episode">Select episode</string>
+    <string name="lbl_select_season">Select season</string>
+    <string name="lbl_episode_ranges">Episode ranges</string>
+    <string name="lbl_episode_range_selection">Episodes %1$d–%2$d</string>
+    <string name="lbl_retry_episode_selection">Retry</string>
+    <string name="msg_episode_selection_load_error">Couldn’t load episodes. Try again.</string>
+    <string name="msg_episode_selection_play_error">Couldn’t switch episodes. Try again.</string>
     <string name="lbl_enable_cinema_mode">Cinema mode</string>
     <string name="sum_enable_cinema_mode">Play available intros and previews before starting a movie</string>
     <string name="lbl_playlists">Playlists</string>

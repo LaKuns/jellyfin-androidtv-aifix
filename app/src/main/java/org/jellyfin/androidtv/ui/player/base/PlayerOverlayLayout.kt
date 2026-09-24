@@ -160,7 +160,7 @@ data class PlayerOverlayVisibilityState(
 
 @Composable
 fun rememberPlayerOverlayVisibility(
-	timeout: Duration = 5.seconds,
+	timeout: Duration? = 5.seconds,
 ): PlayerOverlayVisibilityState {
 	val scope = rememberCoroutineScope()
 	var timerVisible by remember { mutableStateOf(false) }
@@ -169,9 +169,11 @@ fun rememberPlayerOverlayVisibility(
 	fun show() {
 		timerJob?.cancel()
 		timerVisible = true
-		timerJob = scope.launch {
-			delay(timeout)
-			timerVisible = false
+		timerJob = timeout?.let { duration ->
+			scope.launch {
+				delay(duration)
+				timerVisible = false
+			}
 		}
 	}
 

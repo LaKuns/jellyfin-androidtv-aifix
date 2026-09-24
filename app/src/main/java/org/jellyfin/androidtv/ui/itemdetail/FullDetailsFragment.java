@@ -67,6 +67,9 @@ import org.jellyfin.androidtv.ui.playback.MediaManager;
 import org.jellyfin.androidtv.ui.playback.PlaybackLauncher;
 import org.jellyfin.androidtv.ui.presentation.CardPresenter;
 import org.jellyfin.androidtv.ui.presentation.CustomListRowPresenter;
+import org.jellyfin.androidtv.ui.presentation.EpisodeNumberPresenter;
+import org.jellyfin.androidtv.ui.presentation.EpisodeMessagePresenter;
+import org.jellyfin.androidtv.ui.presentation.EpisodeRangePresenter;
 import org.jellyfin.androidtv.ui.presentation.InfoCardPresenter;
 import org.jellyfin.androidtv.ui.presentation.MutableObjectAdapter;
 import org.jellyfin.androidtv.ui.presentation.MyDetailsOverviewRowPresenter;
@@ -103,8 +106,10 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CancellationException;
 
 import kotlin.Lazy;
+import kotlinx.coroutines.Job;
 import kotlinx.serialization.json.Json;
 import timber.log.Timber;
 
@@ -131,7 +136,18 @@ public class FullDetailsFragment extends Fragment implements RecordingIndicatorV
     public UUID mPrevItemId;
 
     private RowsSupportFragment mRowsFragment;
-    private MutableObjectAdapter<Row> mRowsAdapter;
+    MutableObjectAdapter<Row> mRowsAdapter;
+    private ListRow mEpisodeRow;
+    private ListRow mEpisodeRangeRow;
+    private ListRow mSeasonRow;
+    private EpisodeNumberPresenter mSeasonNumberPresenter;
+    private EpisodeRangePresenter mEpisodeRangePresenter;
+    UUID mSelectedSeasonId;
+    UUID mHighlightedEpisodeId;
+    List<BaseItemDto> mEpisodeSeasons;
+    int mEpisodePageStart;
+    EpisodeCatalog mEpisodeCatalog;
+    Job mEpisodeSelectionJob;
 
     private MyDetailsOverviewRowPresenter mDorPresenter;
     private MyDetailsOverviewRow mDetailsOverviewRow;
@@ -276,6 +292,9 @@ public class FullDetailsFragment extends Fragment implements RecordingIndicatorV
                             }
                             updateWatched();
                             mLastUpdated = Instant.now();
+                            if (mBaseItem.getType() == BaseItemKind.SERIES || mBaseItem.getType() == BaseItemKind.EPISODE) {
+                                FullDetailsFragmentHelperKt.loadEpisodeSelection(FullDetailsFragment.this);
+                            }
                             return null;
                         });
                     }
@@ -508,12 +527,27 @@ public class FullDetailsFragment extends Fragment implements RecordingIndicatorV
             ps.addClassPresenter(ListRow.class, mListRowPresenter);
             cancelRowRetrievals();
             mRowsAdapter = new MutableObjectAdapter<Row>(ps);
+            mEpisodeRow = null;
+            mEpisodeRangeRow = null;
+            mSeasonRow = null;
+            mSeasonNumberPresenter = null;
+            mEpisodeRangePresenter = null;
+            mSelectedSeasonId = null;
+            mHighlightedEpisodeId = null;
+            mEpisodeSeasons = null;
+            mEpisodePageStart = 0;
+            if (mEpisodeSelectionJob != null) mEpisodeSelectionJob.cancel(new CancellationException("Item changed"));
+            mEpisodeSelectionJob = null;
+            mEpisodeCatalog = null;
             mRowsFragment.setAdapter(mRowsAdapter);
             mRowsAdapter.add(detailsOverviewRow);
 
             updateInfo(detailsOverviewRow.getItem());
             mSecondaryRowsLoaded = false;
             addAdditionalRows(mRowsAdapter);
+            if (mBaseItem.getType() == BaseItemKind.SERIES || mBaseItem.getType() == BaseItemKind.EPISODE) {
+                FullDetailsFragmentHelperKt.loadEpisodeSelection(FullDetailsFragment.this);
+            }
 
         }
     }
@@ -657,7 +691,7 @@ public class FullDetailsFragment extends Fragment implements RecordingIndicatorV
                 }
 
                 if (mBaseItem.getSeasonId() != null && mBaseItem.getIndexNumber() != null) {
-                    // query index is zero-based but episode no is not
+                    // Keep the existing next-episode row as a fallback when the new selector cannot load.
                     ItemRowAdapter nextAdapter = new ItemRowAdapter(requireContext(), BrowsingUtils.createNextEpisodesRequest(mBaseItem.getSeasonId(), mBaseItem.getIndexNumber()), 0, false, true, new CardPresenter(true, 120), adapter);
                     addItemRow(adapter, nextAdapter, 5, getString(R.string.lbl_next_episode));
                 }
@@ -1280,9 +1314,109 @@ public class FullDetailsFragment extends Fragment implements RecordingIndicatorV
         public void onItemClicked(final Presenter.ViewHolder itemViewHolder, Object item,
                                   RowPresenter.ViewHolder rowViewHolder, Row row) {
 
+            if (item instanceof BaseItemDto && row == mSeasonRow) {
+                FullDetailsFragmentHelperKt.selectEpisodeSeason(FullDetailsFragment.this, (BaseItemDto) item);
+                return;
+            }
+            if (item instanceof BaseItemDto && row == mEpisodeRow) {
+                play((BaseItemDto) item, 0, false);
+                return;
+            }
+            if (item instanceof String && row == mEpisodeRow) {
+                FullDetailsFragmentHelperKt.retryEpisodePage(FullDetailsFragment.this);
+                return;
+            }
+            if (item instanceof EpisodeRange && row == mEpisodeRangeRow) {
+                FullDetailsFragmentHelperKt.selectEpisodeRange(FullDetailsFragment.this, (EpisodeRange) item);
+                return;
+            }
             if (!(item instanceof BaseRowItem)) return;
             itemLauncher.getValue().launch((BaseRowItem) item, (ItemRowAdapter) ((ListRow) row).getAdapter(), requireContext());
         }
+    }
+
+    void showEpisodeSeasons(List<BaseItemDto> seasons, UUID selectedId) {
+        if (mRowsAdapter == null || seasons.isEmpty()) return;
+        if (mSeasonRow != null) {
+            mSeasonNumberPresenter.setSelectedId(selectedId);
+            ArrayObjectAdapter existing = (ArrayObjectAdapter) mSeasonRow.getAdapter();
+            existing.notifyArrayItemRangeChanged(0, existing.size());
+            return;
+        }
+        mSeasonNumberPresenter = new EpisodeNumberPresenter(selectedId, true);
+        ArrayObjectAdapter items = new ArrayObjectAdapter(mSeasonNumberPresenter);
+        items.addAll(0, seasons);
+        mSeasonRow = new ListRow(new HeaderItem(getString(R.string.lbl_select_season)), items);
+        mRowsAdapter.add(1, mSeasonRow);
+    }
+
+    void showEpisodeNumbers(List<BaseItemDto> episodes, UUID selectedId) {
+        if (mRowsAdapter == null) return;
+        if (mEpisodeRow != null) mRowsAdapter.remove(mEpisodeRow);
+        if (episodes.isEmpty()) {
+            mEpisodeRow = null;
+            showEpisodeMessage(getString(R.string.lbl_no_items));
+            return;
+        }
+        ArrayObjectAdapter items = new ArrayObjectAdapter(new EpisodeNumberPresenter(selectedId, false));
+        items.addAll(0, episodes);
+        mEpisodeRow = new ListRow(new HeaderItem(getString(R.string.lbl_episodes)), items);
+        mRowsAdapter.add(episodeRowIndex(), mEpisodeRow);
+    }
+
+    void showEpisodeMessage(String message) {
+        if (mRowsAdapter == null) return;
+        if (mEpisodeRow != null) mRowsAdapter.remove(mEpisodeRow);
+        ArrayObjectAdapter items = new ArrayObjectAdapter(new EpisodeMessagePresenter());
+        items.add(message);
+        mEpisodeRow = new ListRow(new HeaderItem(getString(R.string.lbl_episodes)), items);
+        mRowsAdapter.add(episodeRowIndex(), mEpisodeRow);
+    }
+
+    private int episodeRowIndex() {
+        Row precedingRow = mEpisodeRangeRow != null ? mEpisodeRangeRow : mSeasonRow;
+        int index = precedingRow == null ? 0 : mRowsAdapter.indexOf(precedingRow);
+        return Math.min(Math.max(index + 1, 1), mRowsAdapter.size());
+    }
+
+    void clearEpisodeSelectionPage() {
+        if (mRowsAdapter == null) return;
+        if (mEpisodeRow != null) mRowsAdapter.remove(mEpisodeRow);
+        if (mEpisodeRangeRow != null) mRowsAdapter.remove(mEpisodeRangeRow);
+        mEpisodeRow = null;
+        mEpisodeRangeRow = null;
+        mEpisodeRangePresenter = null;
+    }
+
+    void showEpisodeRanges(List<EpisodeRange> ranges, int selectedStart) {
+        if (mRowsAdapter == null) return;
+        if (ranges.size() <= 1) {
+            if (mEpisodeRangeRow != null) mRowsAdapter.remove(mEpisodeRangeRow);
+            mEpisodeRangeRow = null;
+            mEpisodeRangePresenter = null;
+            return;
+        }
+        if (mEpisodeRangeRow != null) {
+            mEpisodeRangePresenter.setSelectedStart(selectedStart);
+            ArrayObjectAdapter existing = (ArrayObjectAdapter) mEpisodeRangeRow.getAdapter();
+            boolean changed = existing.size() != ranges.size();
+            for (int i = 0; !changed && i < ranges.size(); i++) {
+                changed = !ranges.get(i).equals(existing.get(i));
+            }
+            if (changed) {
+                existing.clear();
+                existing.addAll(0, ranges);
+            } else {
+                existing.notifyArrayItemRangeChanged(0, existing.size());
+            }
+            return;
+        }
+        mEpisodeRangePresenter = new EpisodeRangePresenter(selectedStart);
+        ArrayObjectAdapter items = new ArrayObjectAdapter(mEpisodeRangePresenter);
+        items.addAll(0, ranges);
+        mEpisodeRangeRow = new ListRow(new HeaderItem(getString(R.string.lbl_episode_ranges)), items);
+        int seasonIndex = mSeasonRow == null ? 0 : mRowsAdapter.indexOf(mSeasonRow);
+        mRowsAdapter.add(Math.min(Math.max(seasonIndex + 1, 1), mRowsAdapter.size()), mEpisodeRangeRow);
     }
 
     private final class ItemViewSelectedListener implements OnItemViewSelectedListener {

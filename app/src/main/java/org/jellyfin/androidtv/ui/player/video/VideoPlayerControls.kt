@@ -26,12 +26,18 @@ import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onVisibilityChanged
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import org.jellyfin.androidtv.R
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import org.jellyfin.androidtv.preference.UserPreferences
+import org.jellyfin.androidtv.ui.itemdetail.EpisodeCatalog
+import org.jellyfin.androidtv.ui.playback.EpisodePickerDialog
+import org.jellyfin.androidtv.ui.playback.rewrite.RewriteMediaManager
 import org.jellyfin.androidtv.ui.base.Icon
 import org.jellyfin.androidtv.ui.base.LocalTextStyle
 import org.jellyfin.androidtv.ui.base.Text
@@ -42,6 +48,9 @@ import org.jellyfin.androidtv.ui.player.base.PlayerSeekbar
 import org.jellyfin.playback.core.PlaybackManager
 import org.jellyfin.playback.core.model.PlayState
 import org.jellyfin.playback.core.queue.queue
+import org.jellyfin.playback.jellyfin.queue.baseItem
+import org.jellyfin.sdk.api.client.ApiClient
+import org.jellyfin.sdk.model.api.BaseItemKind
 import org.koin.compose.koinInject
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
@@ -70,6 +79,7 @@ fun VideoPlayerControls(
 			Spacer(Modifier.weight(1f))
 
 			PlaybackInfoButton(onClick = onPlaybackInfoClick)
+			if (playState == PlayState.PAUSED) SelectEpisodeButton(playbackManager)
 
 			MoreOptionsButton {
 				PreviousEntryButton(playbackManager)
@@ -93,6 +103,31 @@ fun VideoPlayerControls(
 			Spacer(Modifier.weight(1f))
 			PositionText(playbackManager)
 		}
+	}
+}
+
+@Composable
+private fun SelectEpisodeButton(playbackManager: PlaybackManager) {
+	val entry by playbackManager.queue.entry.collectAsState()
+	val current = entry?.baseItem?.takeIf { it.type == BaseItemKind.EPISODE && it.seriesId != null } ?: return
+	val context = LocalContext.current
+	val owner = LocalLifecycleOwner.current
+	val api = koinInject<ApiClient>()
+	val preferences = koinInject<UserPreferences>()
+	IconButton(onClick = {
+		EpisodePickerDialog.show(context, owner, api, current) { episode ->
+			val items = EpisodeCatalog(api).playbackItems(episode, preferences[UserPreferences.mediaQueuingEnabled])
+			playbackManager.state.pause()
+			playbackManager.queue.clear()
+			playbackManager.queue.addSupplier(RewriteMediaManager.BaseItemQueueSupplier(api, items, false))
+			playbackManager.state.play()
+			true
+		}
+	}) {
+		Icon(
+			imageVector = ImageVector.vectorResource(R.drawable.ic_select_chapter),
+			contentDescription = stringResource(R.string.lbl_select_episode),
+		)
 	}
 }
 
