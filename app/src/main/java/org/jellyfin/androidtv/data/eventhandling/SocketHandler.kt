@@ -38,6 +38,7 @@ import org.jellyfin.sdk.model.api.PlaystateCommand
 import org.jellyfin.sdk.model.api.PlaystateMessage
 import org.jellyfin.sdk.model.extensions.get
 import org.jellyfin.sdk.model.extensions.getValue
+import org.jellyfin.sdk.model.extensions.ticks
 import org.jellyfin.sdk.model.serializer.toUUIDOrNull
 import timber.log.Timber
 import java.time.Instant
@@ -204,7 +205,7 @@ class SocketHandler(
 					PlaystateCommand.NEXT_TRACK -> playbackController?.next()
 					PlaystateCommand.PREVIOUS_TRACK -> playbackController?.prev()
 					PlaystateCommand.SEEK -> playbackController?.seek(
-						(message.data?.seekPositionTicks ?: 0) / TICKS_TO_MS
+						message.data?.seekPositionTicks?.ticks?.inWholeMilliseconds ?: 0
 					)
 
 					PlaystateCommand.REWIND -> playbackController?.rewind()
@@ -229,7 +230,7 @@ class SocketHandler(
 		when (itemKind) {
 			BaseItemKind.USER_VIEW,
 			BaseItemKind.COLLECTION_FOLDER -> {
-				val item by api.userLibraryApi.getItem(itemId = itemId)
+				val item = withContext(Dispatchers.IO) { api.userLibraryApi.getItem(itemId = itemId).content }
 				itemLauncher.launchUserView(item)
 			}
 
@@ -246,9 +247,5 @@ class SocketHandler(
 		runBlocking(Dispatchers.Main) {
 			Toast.makeText(context, toastMessage, Toast.LENGTH_LONG).show()
 		}
-	}
-
-	companion object {
-		const val TICKS_TO_MS = 10000L
 	}
 }
