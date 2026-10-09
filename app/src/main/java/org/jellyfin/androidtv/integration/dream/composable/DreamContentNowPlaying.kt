@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -103,8 +104,13 @@ fun DreamContentNowPlaying(
 			.overscan(),
 	) {
 		if (primaryImage != null) {
+			// Bound the request to the rendered size. Without this the server
+			// returns the full poster, which is wasted decode work here.
+			val artworkSize = with(LocalDensity.current) {
+				128.dp.roundToPx().coerceAtLeast(1)
+			}
 			AsyncImage(
-				url = primaryImage.getUrl(api),
+				url = primaryImage.getUrl(api, maxWidth = artworkSize, maxHeight = artworkSize),
 				blurHash = primaryImage.blurHash,
 				scaleType = ImageView.ScaleType.CENTER_CROP,
 				modifier = Modifier

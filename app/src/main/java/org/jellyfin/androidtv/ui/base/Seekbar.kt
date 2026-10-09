@@ -29,6 +29,15 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.times
 
+/**
+ * How long the seekbar waits after the last key event before actually seeking.
+ *
+ * This exists to coalesce a burst of directional key repeats into a single jump instead of
+ * issuing one seek per repeat. It is deliberately short: it is added directly to the time
+ * between releasing the key and the picture moving.
+ */
+private val SCRUB_SETTLE_DELAY = 120.milliseconds
+
 @Immutable
 data class SeekbarColors(
 	val backgroundColor: Color,
@@ -106,6 +115,7 @@ fun Seekbar(
 	val visibleProgress = progressOverride ?: progress
 	val knobAlpha by animateFloatAsState(if (focused) 1f else 0f)
 	var scrubCancelJob by remember { mutableStateOf<Job?>(null) }
+	var scrubbingActive by remember { mutableStateOf(false) }
 
 	Box(
 		modifier = modifier
@@ -124,21 +134,29 @@ fun Seekbar(
 					else -> visibleProgress
 				}
 
-				if (isScrubbing && isKeyDown && onScrubbing != null) {
+				if (isScrubbing && isKeyDown) {
 					scrubCancelJob?.cancel()
-					onScrubbing(true)
+					if (!scrubbingActive) {
+						scrubbingActive = true
+						onScrubbing?.invoke(true)
+					}
 				}
 
 				if (visibleProgress != newProgress) {
 					progressOverride = newProgress
-					if (onSeek != null) onSeek(newProgress)
 				}
 
-				if (isScrubbing && isKeyUp && onScrubbing != null) {
+				if (isScrubbing && isKeyUp) {
 					scrubCancelJob?.cancel()
 					scrubCancelJob = coroutineScope.launch {
-						delay(300.milliseconds)
-						onScrubbing(false)
+						// Hold the seek back just long enough to merge a burst of key
+						// repeats into a single jump. This was 300 ms, which put a third of a
+						// second of pure UI latency in front of every seek. 120 ms is still far
+						// longer than a remote's key repeat interval, so merging is unchanged.
+						delay(SCRUB_SETTLE_DELAY)
+						progressOverride?.let { onSeek?.invoke(it) }
+						onScrubbing?.invoke(false)
+						scrubbingActive = false
 						progressOverride = null
 					}
 				}

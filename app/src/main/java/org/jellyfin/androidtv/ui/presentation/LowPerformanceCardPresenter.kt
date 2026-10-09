@@ -54,10 +54,12 @@ class LowPerformanceCardPresenter(
 	private class FocusAwareCardLayout(
 		context: Context,
 		private val onFocused: () -> Unit,
+		private val onUnfocused: () -> Unit,
 	) : LinearLayout(context) {
 		override fun onFocusChanged(gainFocus: Boolean, direction: Int, previouslyFocusedRect: Rect?) {
 			super.onFocusChanged(gainFocus, direction, previouslyFocusedRect)
 			if (gainFocus) onFocused()
+			else onUnfocused()
 		}
 	}
 
@@ -70,7 +72,7 @@ class LowPerformanceCardPresenter(
 			background = ContextCompat.getDrawable(context, R.drawable.shape_card_image_background)
 			clipToOutline = true
 		}
-		val root = FocusAwareCardLayout(context, image::prioritize).apply {
+		val root = FocusAwareCardLayout(context, image::prioritize, image::deprioritize).apply {
 			orientation = LinearLayout.VERTICAL
 			isFocusable = true
 			isFocusableInTouchMode = true
@@ -146,6 +148,7 @@ class LowPerformanceCardPresenter(
 			blurHash = null,
 			placeholder = placeholder,
 			aspectRatio = aspectRatio.toDouble(),
+			prioritize = viewHolder.view.isFocused,
 		)
 	}
 

@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="lbl_episode_picker_season_number">Season %1$s</string>
+</resources>

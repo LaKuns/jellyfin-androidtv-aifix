@@ -8,6 +8,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.jellyfin.androidtv.R
@@ -26,7 +27,6 @@ import org.jellyfin.sdk.api.client.extensions.libraryApi
 import org.jellyfin.sdk.api.client.extensions.liveTvApi
 import org.jellyfin.sdk.api.client.extensions.tvShowsApi
 import org.jellyfin.sdk.api.client.extensions.userLibraryApi
-import org.jellyfin.sdk.api.client.extensions.userViewsApi
 import org.jellyfin.sdk.api.client.extensions.videosApi
 import org.jellyfin.sdk.model.api.ItemFilter
 import org.jellyfin.sdk.model.api.ItemSortBy
@@ -306,12 +306,9 @@ fun ItemRowAdapter.retrieveAdditionalParts(api: ApiClient, query: GetAdditionalP
 fun ItemRowAdapter.retrieveUserViews(api: ApiClient, userViewsRepository: UserViewsRepository) {
 	launchRetrieve {
 		runCatching {
-			val response = withContext(Dispatchers.IO) {
-				api.userViewsApi.getUserViews().content
-			}
-
-			val filteredItems = response.items
-				.filter { userViewsRepository.isSupported(it.collectionType) }
+			// Go through the shared repository instead of issuing a second getUserViews()
+			// call; the home screen has usually just fetched the same list.
+			val filteredItems = userViewsRepository.views.first()
 
 			setItems(
 				items = filteredItems,

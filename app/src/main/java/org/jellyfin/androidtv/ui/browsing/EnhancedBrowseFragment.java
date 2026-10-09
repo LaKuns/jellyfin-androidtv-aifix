@@ -133,8 +133,28 @@ public class EnhancedBrowseFragment extends Fragment implements RowLoader, View.
                 lowPerformanceDevice ? FocusHighlight.ZOOM_FACTOR_NONE : FocusHighlight.ZOOM_FACTOR_MEDIUM
         ));
 
+        // Query setup depends on the folder being available during onCreate.
+        // Keep this synchronous until decoding can be moved behind a lifecycle-safe API.
+        mFolder = decodeFolderArgument();
         setupViews();
         setupQueries(this);
+    }
+
+    /** Decode the folder passed in the fragment arguments, or null when there is none. */
+    @Nullable
+    private BaseItemDto decodeFolderArgument() {
+        Bundle arguments = getArguments();
+        if (arguments == null || !arguments.containsKey(Extras.Folder)) return null;
+
+        String encoded = arguments.getString(Extras.Folder);
+        if (encoded == null) return null;
+
+        return Json.Default.decodeFromString(BaseItemDto.Companion.serializer(), encoded);
+    }
+
+    /** Show the season artwork as the background, but only for a season folder. */
+    private void applySeasonBackdrop() {
+        if (isSeasonFolder()) backgroundService.getValue().setBackground(mFolder);
     }
 
     @Nullable
@@ -167,7 +187,7 @@ public class EnhancedBrowseFragment extends Fragment implements RowLoader, View.
         super.onViewCreated(view, savedInstanceState);
 
         setupEventListeners();
-        if (isSeasonFolder()) backgroundService.getValue().setBackground(mFolder);
+        applySeasonBackdrop();
     }
 
     @Override
@@ -199,8 +219,8 @@ public class EnhancedBrowseFragment extends Fragment implements RowLoader, View.
     }
 
     protected void setupViews() {
-        if (!getArguments().containsKey(Extras.Folder)) return;
-        mFolder = Json.Default.decodeFromString(BaseItemDto.Companion.serializer(), getArguments().getString(Extras.Folder));
+        // Keep this safe when a subclass calls setupViews directly.
+        if (mFolder == null) mFolder = decodeFolderArgument();
         if (mFolder == null) return;
 
         if (mFolder.getCollectionType() != null) {

@@ -755,6 +755,19 @@ public class PlaybackController implements PlaybackControllerNotifiable {
         } else {
             // No saved preference, use server default
             mCurrentOptions.setSubtitleStreamIndex(response.getMediaSource().getDefaultSubtitleStreamIndex());
+            if (mCurrentOptions.getSubtitleStreamIndex() == null || mCurrentOptions.getSubtitleStreamIndex() < 0) {
+                if (userPreferences.getValue().get(UserPreferences.Companion.getSubtitlesAutoSelect())
+                        && response.getMediaSource().getMediaStreams() != null) {
+                    for (MediaStream stream : response.getMediaSource().getMediaStreams()) {
+                        if (stream.getType() == MediaStreamType.SUBTITLE && stream.getCodec() != null
+                                && java.util.Arrays.asList("srt", "subrip", "ass", "ssa", "webvtt", "vtt", "ttml", "mov_text")
+                                    .contains(stream.getCodec().toLowerCase(java.util.Locale.ROOT))) {
+                            mCurrentOptions.setSubtitleStreamIndex(stream.getIndex());
+                            break;
+                        }
+                    }
+                }
+            }
         }
 
         // The previous attempt failed while the server was burning subtitles into the video, so

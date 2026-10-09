@@ -7,34 +7,32 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
-    <ScrollView
+    <!--
+        The details view is moved into the RecyclerView as its first item at runtime.
+        This preserves the old whole-page scrolling behavior while recycling song rows.
+    -->
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:id="@+id/scrollView"
         android:layout_marginTop="10sp"
-        android:scrollbars="none">
+        android:orientation="vertical">
 
-        <RelativeLayout
+        <org.jellyfin.androidtv.ui.DetailRowView
+            android:id="@+id/details"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content">
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="10sp" />
 
-            <org.jellyfin.androidtv.ui.DetailRowView
-                android:layout_height="wrap_content"
-                android:layout_width="match_parent"
-                android:id="@+id/details"
-                android:layout_marginBottom="10sp" />
+        <org.jellyfin.androidtv.ui.ItemListView
+            android:id="@+id/songs"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:paddingTop="0dp"
+            android:paddingBottom="40dp"
+            android:scrollbars="none" />
 
-            <org.jellyfin.androidtv.ui.ItemListView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:id="@+id/songs"
-                android:layout_below="@+id/details"
-                android:paddingTop="20dp"
-                android:paddingBottom="40dp" />
-
-        </RelativeLayout>
-
-    </ScrollView>
+    </LinearLayout>
 
     <org.jellyfin.androidtv.ui.ClockUserView
         android:layout_width="wrap_content"

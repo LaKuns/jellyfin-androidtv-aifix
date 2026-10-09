@@ -11,6 +11,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import org.jellyfin.androidtv.ui.base.dialog.DialogBase
+import org.jellyfin.androidtv.ui.composable.MotionDurations
 
 @Composable
 fun SettingsDialog(
@@ -19,12 +20,14 @@ fun SettingsDialog(
 	modifier: Modifier = Modifier,
 	screen: @Composable BoxScope.() -> Unit,
 ) {
-	val duration = 400
+	val duration = MotionDurations.Slow
 	DialogBase(
 		visible = visible,
 		onDismissRequest = onDismissRequest,
 		modifier = modifier,
 		contentAlignment = Alignment.TopEnd,
+		// Keep the scrim on the same clock as the slide below.
+		durationMillis = duration,
 		enterTransition = slideInHorizontally(
 			initialOffsetX = { it },
 			animationSpec = tween(duration, easing = FastOutSlowInEasing)

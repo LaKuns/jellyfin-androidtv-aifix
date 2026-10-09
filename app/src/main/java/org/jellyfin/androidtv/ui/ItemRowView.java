@@ -92,6 +92,10 @@ public class ItemRowView extends FrameLayout {
         mBaseItem = item;
         ourIndex = ndx + 1;
         mIndexNo.setText(Integer.toString(ourIndex));
+        // Rows are recycled, so every field has to be reset explicitly. The
+        // extra name is hidden in one branch of the switch below and would
+        // otherwise stay hidden when the row is reused for a different item.
+        mExtraName.setVisibility(VISIBLE);
         switch (item.getType()) {
             case AUDIO:
                 mItemName.setText(item.getName());
@@ -116,6 +120,8 @@ public class ItemRowView extends FrameLayout {
         }
         formattedTime = TimeUtils.formatMillis(item.getRunTimeTicks() != null ? item.getRunTimeTicks()/10000 : 0);
         mRunTime.setText(formattedTime);
+        // Drop a stale "now playing" marker left over from a previous binding.
+        setPlaying(false);
     }
 
     public void updateWatched() {
@@ -157,6 +163,17 @@ public class ItemRowView extends FrameLayout {
 
     public void setRowSelectedListener(RowSelectedListener listener) {
         rowSelectedListener = listener;
+    }
+
+    public void setRowClickedListener(RowClickedListener listener) {
+        rowClickedListener = listener;
+        final ItemRowView itemRowView = this;
+        setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (rowClickedListener != null) rowClickedListener.onRowClicked(itemRowView);
+            }
+        });
     }
 
     public interface RowSelectedListener {

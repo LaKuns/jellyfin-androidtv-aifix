@@ -1339,11 +1339,12 @@ public class FullDetailsFragment extends Fragment implements RecordingIndicatorV
         if (mRowsAdapter == null || seasons.isEmpty()) return;
         if (mSeasonRow != null) {
             mSeasonNumberPresenter.setSelectedId(selectedId);
+            mSeasonNumberPresenter.setSeasonItems(seasons);
             ArrayObjectAdapter existing = (ArrayObjectAdapter) mSeasonRow.getAdapter();
             existing.notifyArrayItemRangeChanged(0, existing.size());
             return;
         }
-        mSeasonNumberPresenter = new EpisodeNumberPresenter(selectedId, true);
+        mSeasonNumberPresenter = new EpisodeNumberPresenter(selectedId, true, seasons);
         ArrayObjectAdapter items = new ArrayObjectAdapter(mSeasonNumberPresenter);
         items.addAll(0, seasons);
         mSeasonRow = new ListRow(new HeaderItem(getString(R.string.lbl_select_season)), items);

@@ -42,7 +42,8 @@ class AsyncImageView @JvmOverloads constructor(
 ) : AppCompatImageView(context, attrs, defStyleAttr), KoinComponent {
 	companion object {
 		private const val DEFAULT_CROSSFADE_DURATION_MS = 100
-		private val lowPerformanceBackgroundImageSemaphore = Semaphore(1)
+		// Fill the visible grid together, while bounding simultaneous decodes on old TVs.
+		private val lowPerformanceBackgroundImageSemaphore = Semaphore(8)
 		private val lowPerformanceFocusedImageSemaphore = Semaphore(1)
 	}
 
@@ -51,6 +52,8 @@ class AsyncImageView @JvmOverloads constructor(
 	private var loadJob: Job? = null
 	private var pendingRequest: PendingImageRequest? = null
 	private var requestStarted = false
+	private var prioritized = false
+	private var scheduleGeneration = 0
 	private val imageStyle = context.obtainStyledAttributes(attrs, R.styleable.AsyncImageView, defStyleAttr, 0).let { attributes ->
 		try {
 			ImageStyle(
@@ -110,25 +113,38 @@ class AsyncImageView @JvmOverloads constructor(
 		placeholder: Drawable? = null,
 		aspectRatio: Double = 1.0,
 		blurHashResolution: Int = 32,
+		prioritize: Boolean = false,
 	) {
 		val requestKey = ImageRequestKey(url, blurHash, circleCrop, aspectRatio, blurHashResolution)
 		if (requestKey == pendingRequest?.key && loadJob?.isActive == true) return
 		val request = PendingImageRequest(requestKey, url, blurHash, placeholder, aspectRatio, blurHashResolution)
 		pendingRequest = request
-		schedule(request, prioritized = false)
+		prioritized = prioritize && PerformanceProfile.isLowPerformanceDevice(context)
+		schedule(request, prioritized = prioritized)
 	}
 
 	/** Promote a queued image when its card receives focus. */
 	fun prioritize() {
-		if (!PerformanceProfile.isLowPerformanceDevice(context) || requestStarted) return
-		pendingRequest?.let { schedule(it, prioritized = true) }
+		if (!PerformanceProfile.isLowPerformanceDevice(context) || requestStarted || prioritized) return
+		pendingRequest?.let {
+			prioritized = true
+			schedule(it, prioritized = true)
+		}
+	}
+
+	/** A card that lost focus should not block the next focused card while still queued. */
+	fun deprioritize() {
+		if (!PerformanceProfile.isLowPerformanceDevice(context) || !prioritized) return
+		prioritized = false
+		if (!requestStarted) pendingRequest?.let { schedule(it, prioritized = false) }
 	}
 
 	private fun schedule(pending: PendingImageRequest, prioritized: Boolean) {
+		val generation = ++scheduleGeneration
 		doOnAttach {
 			// RecyclerView may bind the same view several times before it is
 			// attached. Only the most recent request should reach Coil.
-			if (pending !== pendingRequest) return@doOnAttach
+			if (pending !== pendingRequest || generation != scheduleGeneration) return@doOnAttach
 			// Cancel the previous load if still running
 			loadJob?.cancel()
 			requestStarted = false
@@ -193,6 +209,8 @@ class AsyncImageView @JvmOverloads constructor(
 		loadJob = null
 		pendingRequest = null
 		requestStarted = false
+		prioritized = false
+		scheduleGeneration++
 		setImageDrawable(null)
 	}
 }

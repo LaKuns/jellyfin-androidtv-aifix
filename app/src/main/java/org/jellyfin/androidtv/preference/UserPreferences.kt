@@ -319,6 +319,9 @@ class UserPreferences(context: Context) : SharedPreferenceStore(
 		 */
 		var subtitlesBurnDuringTranscode = booleanPreference("subtitles_burn_during_transcode", false)
 
+		/** Automatically select a text subtitle when the server did not select one. */
+		var subtitlesAutoSelect = booleanPreference("subtitles_auto_select", false)
+
 		/**
 		 * Enable PGS subtitle direct-play.
 		 */

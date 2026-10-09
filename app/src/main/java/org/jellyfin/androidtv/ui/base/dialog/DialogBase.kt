@@ -28,6 +28,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import org.jellyfin.androidtv.ui.base.JellyfinTheme
 import org.jellyfin.androidtv.ui.base.interactionTracker
+import org.jellyfin.androidtv.ui.composable.MotionDurations
 
 @Composable
 fun DialogBase(
@@ -35,14 +36,20 @@ fun DialogBase(
 	onDismissRequest: () -> Unit,
 	modifier: Modifier = Modifier,
 	scrimColor: Color = JellyfinTheme.colorScheme.scrim,
-	enterTransition: EnterTransition = fadeIn(tween(300)),
-	exitTransition: ExitTransition = fadeOut(tween(300)),
+	durationMillis: Int = MotionDurations.Normal,
 	contentAlignment: Alignment = Alignment.Center,
+	enterTransition: EnterTransition = fadeIn(tween(durationMillis)),
+	exitTransition: ExitTransition = fadeOut(tween(durationMillis)),
 	content: @Composable BoxScope.() -> Unit,
 ) {
+	// The scrim and the content must move together. They previously used different
+	// durations (1000 ms for the scrim vs 300 ms for the content), which reads as the
+	// dialog "catching up" after the background has already settled. Callers supplying a
+	// custom enter/exit transition should pass the matching [durationMillis] so the scrim
+	// stays in step with it.
 	val transition = updateTransition(visible)
 	val alpha by transition.animateFloat(
-		transitionSpec = { tween(1000) },
+		transitionSpec = { tween(durationMillis) },
 		targetValueByState = { visible -> if (visible) 1f else 0f }
 	)
 

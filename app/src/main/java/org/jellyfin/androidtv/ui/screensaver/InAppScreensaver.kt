@@ -1,8 +1,5 @@
 package org.jellyfin.androidtv.ui.screensaver
 
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.fillMaxSize
@@ -18,6 +15,7 @@ import androidx.compose.ui.input.key.type
 import org.jellyfin.androidtv.integration.dream.composable.DreamHost
 import org.jellyfin.androidtv.ui.InteractionTrackerViewModel
 import org.jellyfin.androidtv.ui.base.dialog.DialogBase
+import org.jellyfin.androidtv.ui.composable.MotionDurations
 import org.jellyfin.androidtv.util.isMediaSessionKeyEvent
 import org.koin.androidx.compose.koinViewModel
 
@@ -32,8 +30,9 @@ fun InAppScreensaver() {
 			interactionTrackerViewModel.notifyInteraction(canCancel = true, userInitiated = false)
 		},
 		scrimColor = Color.Black,
-		enterTransition = fadeIn(tween(1_000)),
-		exitTransition = fadeOut(tween(1_000)),
+		// A slow fade is the point of a screensaver; the scrim must use the same clock
+		// as the content instead of finishing at its own pace.
+		durationMillis = MotionDurations.VerySlow,
 		modifier = Modifier
 			.fillMaxSize()
 			.clickable(

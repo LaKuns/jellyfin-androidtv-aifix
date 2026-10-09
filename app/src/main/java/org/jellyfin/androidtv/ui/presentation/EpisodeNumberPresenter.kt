@@ -6,13 +6,15 @@ import android.view.ViewGroup
 import android.widget.TextView
 import androidx.leanback.widget.Presenter
 import org.jellyfin.androidtv.R
+import org.jellyfin.androidtv.util.sdk.episodeSeasonLabel
 import org.jellyfin.sdk.model.api.BaseItemDto
 
 /** Compact, remote-focusable episode numbers for a Leanback row. */
 @Suppress("MagicNumber")
-class EpisodeNumberPresenter(
+class EpisodeNumberPresenter @JvmOverloads constructor(
     var selectedId: java.util.UUID? = null,
     private val seasons: Boolean = false,
+    var seasonItems: List<BaseItemDto> = emptyList(),
 ) : Presenter() {
     override fun onCreateViewHolder(parent: ViewGroup): ViewHolder = ViewHolder(TextView(parent.context).apply {
         val density = resources.displayMetrics.density
@@ -33,7 +35,7 @@ class EpisodeNumberPresenter(
             val number = episode.indexNumber?.toString()?.padStart(2, '0') ?: episode.name.orEmpty()
             val end = episode.indexNumberEnd
             val label = when {
-                seasons -> episode.name.orEmpty()
+                seasons -> episodeSeasonLabel(context, episode, seasonItems)
                 end != null && end != episode.indexNumber -> "$number–${end.toString().padStart(2, '0')}"
                 else -> number
             }
@@ -41,7 +43,7 @@ class EpisodeNumberPresenter(
             text = if (!seasons && isActivated) "▶$label" else label
             setTypeface(null, if (isActivated) Typeface.BOLD else Typeface.NORMAL)
             alpha = if (!seasons && !isActivated && episode.userData?.played == true) 0.72f else 1f
-            contentDescription = if (seasons) episode.name.orEmpty() else episode.indexNumber?.let { index ->
+            contentDescription = if (seasons) label else episode.indexNumber?.let { index ->
                 "${episode.name.orEmpty()}, ${context.getString(R.string.lbl_episode_number, index)}"
             } ?: episode.name.orEmpty()
         }

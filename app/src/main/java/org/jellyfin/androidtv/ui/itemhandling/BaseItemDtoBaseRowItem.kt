@@ -9,6 +9,7 @@ import org.jellyfin.androidtv.util.apiclient.seriesPrimaryImage
 import org.jellyfin.androidtv.util.apiclient.seriesThumbImage
 import org.jellyfin.androidtv.util.getTimeFormatter
 import org.jellyfin.androidtv.util.locale
+import org.jellyfin.androidtv.util.sdk.episodeSeasonLabel
 import org.jellyfin.androidtv.util.sdk.getFullName
 import org.jellyfin.androidtv.util.sdk.getSubName
 import org.jellyfin.sdk.model.api.BaseItemDto
@@ -40,6 +41,8 @@ open class BaseItemDtoBaseRowItem @JvmOverloads constructor(
 	selectAction = selectAction,
 	baseItem = item,
 ) {
+	private val imageCache = HashMap<BaseRowImageType, JellyfinImage?>()
+
 	fun getEpisodeNumberLabel(): String? {
 		if (baseItem?.type != BaseItemKind.EPISODE) return null
 		val start = baseItem?.indexNumber ?: return null
@@ -69,6 +72,7 @@ open class BaseItemDtoBaseRowItem @JvmOverloads constructor(
 	override val isPlayed get() = baseItem?.userData?.played == true
 
 	override fun getCardName(context: Context) = when {
+		baseItem?.type == BaseItemKind.SEASON -> episodeSeasonLabel(context, baseItem)
 		baseItem?.type == BaseItemKind.AUDIO && baseItem.artists != null -> baseItem.artists?.joinToString(", ")
 		baseItem?.type == BaseItemKind.AUDIO && baseItem.albumArtists != null -> baseItem.albumArtists?.joinToString(", ")
 		baseItem?.type == BaseItemKind.AUDIO && baseItem.albumArtist != null -> baseItem.albumArtist
@@ -76,7 +80,10 @@ open class BaseItemDtoBaseRowItem @JvmOverloads constructor(
 		else -> baseItem?.getFullName(context)
 	}
 
-	override fun getFullName(context: Context) = baseItem?.getFullName(context)
+	override fun getFullName(context: Context) = when (baseItem?.type) {
+		BaseItemKind.SEASON -> episodeSeasonLabel(context, baseItem)
+		else -> baseItem?.getFullName(context)
+	}
 	override fun getName(context: Context) = when (baseItem?.type) {
 		BaseItemKind.AUDIO -> baseItem.getFullName(context)
 		else -> baseItem?.name
@@ -110,6 +117,15 @@ open class BaseItemDtoBaseRowItem @JvmOverloads constructor(
 	}
 
 	override fun getImage(imageType: BaseRowImageType): JellyfinImage? {
+		// Every call into BaseItemDto.itemImages/parentImages rebuilds a map from scratch.
+		// A card is rebound each time it scrolls back into view, so the resolved image is
+		// memoized for the lifetime of this row item instead of recomputed per bind.
+		if (imageCache.containsKey(imageType)) return imageCache[imageType]
+
+		return resolveImage(imageType).also { imageCache[imageType] = it }
+	}
+
+	private fun resolveImage(imageType: BaseRowImageType): JellyfinImage? {
 		val primaryImage = when {
 			preferSeriesPoster && baseItem?.type == BaseItemKind.EPISODE -> baseItem.parentImages[ImageType.PRIMARY]
 				?: baseItem.seriesPrimaryImage

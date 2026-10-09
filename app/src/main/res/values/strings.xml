@@ -488,6 +488,9 @@
     <string name="pref_playback_description">Video, subtitles, live tv, next up</string>
     <string name="pref_video">Video</string>
     <string name="pref_subtitles">Subtitles</string>
+    <string name="pref_subtitles_auto_select">Automatically select subtitles</string>
+    <string name="pref_subtitles_auto_select_description">Choose a text subtitle when no server default is set. A subtitle you manually disable stays off for the rest of the queue.</string>
+    <string name="msg_playlist_load_error">Could not load the complete list. Please try again.</string>
     <string name="pref_audio">Audio</string>
     <string name="pref_direct_stream_live_off">Transcoding is used when necessary</string>
     <string name="pref_direct_stream_live_on">Transcoding is disabled</string>

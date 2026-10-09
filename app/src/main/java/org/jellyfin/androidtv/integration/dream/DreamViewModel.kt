@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.withContext
 import org.jellyfin.androidtv.integration.dream.model.DreamContent
 import org.jellyfin.androidtv.preference.UserPreferences
+import org.jellyfin.androidtv.util.PerformanceProfile
 import org.jellyfin.androidtv.util.apiclient.getUrl
 import org.jellyfin.androidtv.util.apiclient.itemBackdropImages
 import org.jellyfin.androidtv.util.apiclient.itemImages
@@ -49,6 +50,30 @@ class DreamViewModel(
 	playbackManager: PlaybackManager,
 	private val userPreferences: UserPreferences,
 ) : ViewModel() {
+	companion object {
+		private const val MAX_DREAM_IMAGE_WIDTH = 1920
+		private const val MAX_DREAM_IMAGE_HEIGHT = 1080
+		private const val MAX_LOW_PERFORMANCE_DREAM_IMAGE_WIDTH = 1280
+		private const val MAX_LOW_PERFORMANCE_DREAM_IMAGE_HEIGHT = 720
+	}
+
+	private val lowPerformanceDevice = PerformanceProfile.isLowPerformanceDevice(context)
+
+	/**
+	 * The screensaver keeps its backdrop as a fullscreen bitmap. Requesting the
+	 * original image here decodes a multi-megabyte bitmap (around 33 MB for a
+	 * 4K backdrop) while the main UI and Media3 are still alive, so the size is
+	 * always bounded.
+	 */
+	private val dreamImageSize by lazy {
+		val metrics = context.resources.displayMetrics
+		val maxWidth = if (lowPerformanceDevice) MAX_LOW_PERFORMANCE_DREAM_IMAGE_WIDTH else MAX_DREAM_IMAGE_WIDTH
+		val maxHeight = if (lowPerformanceDevice) MAX_LOW_PERFORMANCE_DREAM_IMAGE_HEIGHT else MAX_DREAM_IMAGE_HEIGHT
+		val width = metrics.widthPixels.coerceAtLeast(1).coerceAtMost(maxWidth)
+		val height = metrics.heightPixels.coerceAtLeast(1).coerceAtMost(maxHeight)
+		width to height
+	}
+
 	@OptIn(ExperimentalCoroutinesApi::class)
 	private val _mediaContent = playbackManager.queue.entry
 		.map { entry ->
@@ -135,8 +160,9 @@ class DreamViewModel(
 	}.cancellable()
 
 	private suspend fun BaseItemDto.asLibraryShowcase(): DreamContent.LibraryShowcase? = withContext(Dispatchers.IO) {
-		val logoUrl = itemImages[ImageType.LOGO]?.getUrl(api)
-		val backdropUrl = itemBackdropImages.randomOrNull()?.getUrl(api)
+		val (width, height) = dreamImageSize
+		val logoUrl = itemImages[ImageType.LOGO]?.getUrl(api, maxWidth = width)
+		val backdropUrl = itemBackdropImages.randomOrNull()?.getUrl(api, fillWidth = width, fillHeight = height)
 
 		// Require a backdrop
 		if (backdropUrl == null) return@withContext null

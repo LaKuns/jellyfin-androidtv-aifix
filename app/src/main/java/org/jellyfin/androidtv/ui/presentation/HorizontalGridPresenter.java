@@ -191,8 +191,12 @@ public class HorizontalGridPresenter extends Presenter {
             vh.mItemBridgeAdapter.setWrapper(null);
         }
         vh.getGridView().setFocusDrawingOrderEnabled(!isUsingZOrder());
+        // Animate the focus scale so the selected card glides to its focused size instead of
+        // snapping. Leanback's own grid presenters leave this off, which reads as a hard jump
+        // when moving along a row. Low-performance devices pass ZOOM_FACTOR_NONE, where there
+        // is no scale to animate and no animator is created at all.
         FocusHighlightHelper.setupBrowseItemFocusHighlight(vh.mItemBridgeAdapter,
-                mZoomFactor, false);
+                mZoomFactor, mZoomFactor != FocusHighlight.ZOOM_FACTOR_NONE);
 
         final ViewHolder gridViewHolder = vh;
         vh.getGridView().setOnChildViewHolderSelectedListener(new OnChildViewHolderSelectedListener() {

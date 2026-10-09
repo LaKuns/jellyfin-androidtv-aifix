@@ -23,6 +23,7 @@ import timber.log.Timber;
 public class LeanbackOverlayFragment extends PlaybackSupportFragment {
     private CustomPlaybackTransportControlGlue playerGlue;
     private VideoPlayerAdapter playerAdapter;
+    private CustomSeekProvider seekProvider;
     private boolean shouldShowOverlay = true;
     private Lazy<PlaybackControllerContainer> playbackControllerContainer = inject(PlaybackControllerContainer.class);
     private final Lazy<UserSettingPreferences> userSettingPreferences = inject(UserSettingPreferences.class);
@@ -103,13 +104,24 @@ public class LeanbackOverlayFragment extends PlaybackSupportFragment {
         playerGlue.setSeekEnabled(playerAdapter.canSeek());
 
         long skipForwardLength = userSettingPreferences.getValue().get(UserSettingPreferences.Companion.getSkipForwardLength()).longValue();
-        playerGlue.setSeekProvider(playerAdapter.canSeek() ? new CustomSeekProvider(playerAdapter, imageLoader.getValue(), api.getValue(), requireContext(), skipForwardLength) : null);
+        if (seekProvider != null) seekProvider.reset();
+        seekProvider = playerAdapter.canSeek() ? new CustomSeekProvider(playerAdapter, imageLoader.getValue(), api.getValue(), requireContext(), skipForwardLength) : null;
+        playerGlue.setSeekProvider(seekProvider);
         recordingStateChanged();
         playerAdapter.updateDuration();
     }
 
     public void recordingStateChanged() {
         playerGlue.recordingStateChanged();
+    }
+
+    @Override
+    public void onDestroy() {
+        if (seekProvider != null) {
+            seekProvider.reset();
+            seekProvider = null;
+        }
+        super.onDestroy();
     }
 
     @Override

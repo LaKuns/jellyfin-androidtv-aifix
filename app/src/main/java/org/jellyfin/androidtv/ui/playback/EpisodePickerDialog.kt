@@ -24,6 +24,7 @@ import org.jellyfin.androidtv.R
 import org.jellyfin.androidtv.ui.itemdetail.EpisodeCatalog
 import org.jellyfin.androidtv.ui.itemdetail.EpisodeRange
 import org.jellyfin.androidtv.util.PerformanceProfile
+import org.jellyfin.androidtv.util.sdk.episodeSeasonLabel
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.model.api.BaseItemDto
 import timber.log.Timber
@@ -211,7 +212,7 @@ object EpisodePickerDialog {
                     if (!dialog.isShowing || !owner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) return@launch
                     seasons.forEach { season ->
                         seasonBar.addView(Button(context).apply {
-                            text = season.name.orEmpty()
+                            text = episodeSeasonLabel(context, season, seasons)
                             tag = season.id
                             setOnClickListener { loadPage(season, 0) }
                         })

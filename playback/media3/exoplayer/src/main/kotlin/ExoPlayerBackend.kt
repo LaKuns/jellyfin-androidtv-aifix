@@ -11,6 +11,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
 import androidx.media3.common.TrackSelectionParameters
+import androidx.media3.common.Tracks
 import androidx.media3.common.VideoSize
 import androidx.media3.common.text.CueGroup
 import androidx.media3.common.util.UnstableApi
@@ -59,6 +60,7 @@ class ExoPlayerBackend(
 		const val TS_SEARCH_BYTES_LM = TsExtractor.TS_PACKET_SIZE * 1800
 		const val TS_SEARCH_BYTES_HM = TsExtractor.DEFAULT_TIMESTAMP_SEARCH_BYTES
 		const val MEDIA_ITEM_COUNT_MAX = 10
+
 	}
 
 	private var currentStream: PlayableMediaStream? = null
@@ -67,6 +69,7 @@ class ExoPlayerBackend(
 	private val audioAttributeState = AudioAttributeState()
 	private val timedEventState = TimedEventState()
 	private var lastKnownDuration: Duration? = null
+
 
 	private val assHandler by lazy {
 		AssHandler(AssRenderType.OVERLAY_OPEN_GL)
@@ -117,6 +120,10 @@ class ExoPlayerBackend(
 				exoPlayerOptions.bufferForPlaybackDuration?.inWholeMilliseconds?.toInt() ?: DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_MS,
 				exoPlayerOptions.bufferForPlaybackAfterRebufferDuration?.inWholeMilliseconds?.toInt() ?: DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS,
 			)
+			// Without this the load control targets a byte count first and only uses the
+			// durations above as a fallback, so bufferForPlaybackDuration was not actually
+			// deciding how long playback waits before showing a frame after a seek.
+			.setPrioritizeTimeOverSizeThresholds(true)
 			.build()
 
 		ExoPlayer.Builder(context)
@@ -238,6 +245,7 @@ class ExoPlayerBackend(
 
 		// Remove any excessive items from the start
 		while (exoPlayer.mediaItemCount > MEDIA_ITEM_COUNT_MAX - 1) exoPlayer.removeMediaItem(0)
+
 
 		// Add new item to the end of the media item list
 		exoPlayer.addMediaItem(mediaItem)

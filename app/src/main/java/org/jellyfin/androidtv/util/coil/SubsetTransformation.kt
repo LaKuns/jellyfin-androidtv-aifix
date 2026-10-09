@@ -15,5 +15,11 @@ class SubsetTransformation(
 	override suspend fun transform(
 		input: Bitmap,
 		size: Size,
-	): Bitmap = Bitmap.createBitmap(input, x, y, width, height)
+	): Bitmap {
+		val safeX = x.coerceIn(0, input.width - 1)
+		val safeY = y.coerceIn(0, input.height - 1)
+		val safeWidth = width.coerceIn(1, input.width - safeX)
+		val safeHeight = height.coerceIn(1, input.height - safeY)
+		return Bitmap.createBitmap(input, safeX, safeY, safeWidth, safeHeight)
+	}
 }

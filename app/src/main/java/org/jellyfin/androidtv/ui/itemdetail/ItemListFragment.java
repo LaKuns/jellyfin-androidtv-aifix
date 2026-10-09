@@ -6,7 +6,6 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.TextUtils;
-import android.util.DisplayMetrics;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
@@ -15,7 +14,6 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.LinearLayout;
 import android.widget.PopupMenu;
-import android.widget.ScrollView;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
@@ -72,17 +70,15 @@ public class ItemListFragment extends Fragment implements View.OnKeyListener {
     private TextView mSummary;
     private LinearLayout mButtonRow;
     private ItemListView mItemList;
-    private ScrollView mScrollView;
     private ItemRowView mCurrentRow;
-
-    private ItemRowView mCurrentlyPlayingRow;
 
     private BaseItemDto mBaseItem;
     private List<BaseItemDto> mItems = new ArrayList<>();
 
-    private int mBottomScrollThreshold;
-
-    private DisplayMetrics mMetrics;
+    // Playlist paging state
+    private int mPlaylistOffset = 0;
+    private boolean mPlaylistComplete = false;
+    private boolean mQueueLoading = false;
 
     private boolean firstTime = true;
     private Instant lastUpdated = Instant.now();
@@ -111,11 +107,7 @@ public class ItemListFragment extends Fragment implements View.OnKeyListener {
         mButtonRow = detailsBinding.fdButtonRow;
         mSummary = detailsBinding.fdSummaryText;
         mItemList = binding.songs;
-        mScrollView = binding.scrollView;
-
-        mMetrics = new DisplayMetrics();
-        requireActivity().getWindowManager().getDefaultDisplay().getMetrics(mMetrics);
-        mBottomScrollThreshold = (int) (mMetrics.heightPixels * .6);
+        mItemList.setHeaderView(binding.details);
 
         //Item list listeners
         mItemList.setRowSelectedListener(new ItemRowView.RowSelectedListener() {
@@ -123,13 +115,7 @@ public class ItemListFragment extends Fragment implements View.OnKeyListener {
             public void onRowSelected(ItemRowView row) {
                 mCurrentRow = row;
                 //Keep selected row in center of screen
-                int[] location = new int[]{0, 0};
-                row.getLocationOnScreen(location);
-                int y = location[1];
-                if (y > mBottomScrollThreshold) {
-                    // too close to bottom - scroll down
-                    mScrollView.smoothScrollBy(0, y - mBottomScrollThreshold);
-                }
+                mItemList.centerRow(row);
             }
         });
 
@@ -139,6 +125,8 @@ public class ItemListFragment extends Fragment implements View.OnKeyListener {
                 showMenu(row, row.getItem().getType() != BaseItemKind.AUDIO);
             }
         });
+
+        mItemList.setOnLoadMoreListener(this::loadNextPlaylistPage);
 
         return binding.getRoot();
     }
@@ -193,7 +181,7 @@ public class ItemListFragment extends Fragment implements View.OnKeyListener {
         // and fire it to be sure we're updated
         mAudioEventListener.onPlaybackStateChange(mediaManager.getValue().isPlayingAudio() ? PlaybackController.PlaybackState.PLAYING : PlaybackController.PlaybackState.IDLE, mediaManager.getValue().getCurrentAudioItem());
 
-        if (!firstTime && dataRefreshService.getValue().getLastPlayback() != null && dataRefreshService.getValue().getLastPlayback().isAfter(lastUpdated)) {
+        if (mBaseItem != null && !firstTime && dataRefreshService.getValue().getLastPlayback() != null && dataRefreshService.getValue().getLastPlayback().isAfter(lastUpdated)) {
             if (MediaType.VIDEO.equals(mBaseItem.getMediaType())) {
                 refreshHandler.postDelayed(new Runnable() {
                     @Override
@@ -221,6 +209,7 @@ public class ItemListFragment extends Fragment implements View.OnKeyListener {
     @Override
     public void onDestroyView() {
         refreshHandler.removeCallbacksAndMessages(null);
+        mQueueLoading = false;
         super.onDestroyView();
     }
 
@@ -230,18 +219,16 @@ public class ItemListFragment extends Fragment implements View.OnKeyListener {
             Timber.i("Got playback state change event %s for item %s", newState.toString(), currentItem != null ? currentItem.getName() : "<unknown>");
 
             if (newState != PlaybackController.PlaybackState.PLAYING || currentItem == null) {
-                if (mCurrentlyPlayingRow != null) mCurrentlyPlayingRow.updateCurrentTime(-1);
-                mCurrentlyPlayingRow = mItemList.updatePlaying(null);
+                mItemList.updateCurrentTime(-1);
+                mItemList.updatePlaying(null);
             } else {
-                mCurrentlyPlayingRow = mItemList.updatePlaying(currentItem.getId());
+                mItemList.updatePlaying(currentItem.getId());
             }
         }
 
         @Override
         public void onProgress(long pos, long duration) {
-            if (mCurrentlyPlayingRow != null) {
-                mCurrentlyPlayingRow.updateCurrentTime(pos);
-            }
+            mItemList.updateCurrentTime(pos);
         }
 
         @Override
@@ -271,7 +258,7 @@ public class ItemListFragment extends Fragment implements View.OnKeyListener {
         playFromHere.setOnMenuItemClickListener(new MenuItem.OnMenuItemClickListener() {
             @Override
             public boolean onMenuItemClick(MenuItem item) {
-                play(mItems, row.getIndex(), false);
+                playCompletePlaylist(row.getIndex());
                 return true;
             }
         });
@@ -325,19 +312,46 @@ public class ItemListFragment extends Fragment implements View.OnKeyListener {
         ItemListFragmentHelperKt.getPlaylist(this, mBaseItem, itemResponse);
     }
 
-    private Function1<List<BaseItemDto>, Unit> itemResponse = (List<BaseItemDto> items) -> {
+    /**
+     * Request the next page of rows once the user approaches the end of the list. Rows are
+     * recycled by the adapter, so paging bounds the parsed item count instead of the view
+     * count, and the payload per page is small.
+     */
+    private void loadNextPlaylistPage() {
+        if (mPlaylistComplete || mBaseItem == null) return;
+
+        mItemList.setLoadingMore(true);
+        ItemListFragmentHelperKt.getPlaylistPage(this, mBaseItem, mPlaylistOffset, page -> {
+            mItemList.setLoadingMore(false);
+            if (page == null) {
+                Utils.showToast(requireContext(), R.string.msg_playlist_load_error);
+                return null;
+            }
+            if (!page.getHasMore()) mPlaylistComplete = true;
+            if (page.getItems().isEmpty()) return null;
+
+            mPlaylistOffset += page.getItems().size();
+            mItemList.appendItems(page.getItems());
+            return null;
+        });
+    }
+
+    private Function1<PlaylistPage, Unit> itemResponse = (PlaylistPage page) -> {
+        if (page == null) {
+            Utils.showToast(requireContext(), R.string.msg_playlist_load_error);
+            return null;
+        }
         mTitle.setText(mBaseItem.getName());
         if (mBaseItem.getName().length() > 32) {
             // scale down the title so more will fit
             mTitle.setTextSize(32);
         }
+        List<BaseItemDto> items = page.getItems();
+        mPlaylistOffset = items.size();
+        mPlaylistComplete = !page.getHasMore();
+        mItemList.setItems(items);
+        mItems = mItemList.getItems();
         if (!items.isEmpty()) {
-            mItems = new ArrayList<>();
-            int i = 0;
-            for (BaseItemDto item : items) {
-                mItemList.addItem(item, i++);
-                mItems.add(item);
-            }
             if (mediaManager.getValue().isPlayingAudio()) {
                 //update our status
                 mAudioEventListener.onPlaybackStateChange(PlaybackController.PlaybackState.PLAYING, mediaManager.getValue().getCurrentAudioItem());
@@ -358,6 +372,33 @@ public class ItemListFragment extends Fragment implements View.OnKeyListener {
         play(items, 0, shuffle);
     }
 
+    private void playCompletePlaylist(int startIndex) {
+        if (mQueueLoading || mBaseItem == null) return;
+        mQueueLoading = true;
+        ItemListFragmentHelperKt.getAllPlaylistItems(this, mBaseItem, items -> {
+            mQueueLoading = false;
+            if (items == null) {
+                Utils.showToast(requireContext(), R.string.msg_playlist_load_error);
+            } else if (items.isEmpty()) {
+                Utils.showToast(requireContext(), R.string.msg_no_playable_items);
+            } else {
+                play(items, Math.min(startIndex, items.size() - 1), false);
+            }
+            return null;
+        });
+    }
+
+    private void queueCompletePlaylist() {
+        if (mQueueLoading || mBaseItem == null) return;
+        mQueueLoading = true;
+        ItemListFragmentHelperKt.getAllPlaylistItems(this, mBaseItem, items -> {
+            mQueueLoading = false;
+            if (items == null) Utils.showToast(requireContext(), R.string.msg_playlist_load_error);
+            else if (!items.isEmpty()) mediaManager.getValue().addToAudioQueue(items);
+            return null;
+        });
+    }
+
     private void play(List<BaseItemDto> items, int ndx, boolean shuffle) {
         Timber.i("play items: %d, ndx: %d, shuffle: %b", items.size(), ndx, shuffle);
 
@@ -376,14 +417,14 @@ public class ItemListFragment extends Fragment implements View.OnKeyListener {
                 @Override
                 public void onClick(View v) {
                     if (mItems.size() > 0) {
-                        play(mItems, false);
+                        playCompletePlaylist(0);
                     } else {
                         Utils.showToast(requireContext(), R.string.msg_no_playable_items);
                     }
                 }
             });
             play.setOnFocusChangeListener((v, hasFocus) -> {
-                if (hasFocus) mScrollView.smoothScrollTo(0, 0);
+                if (hasFocus) mItemList.scrollToStart();
             });
             mButtonRow.addView(play);
 
@@ -394,13 +435,13 @@ public class ItemListFragment extends Fragment implements View.OnKeyListener {
                 queueButton = TextUnderButton.create(requireContext(), R.drawable.ic_add, buttonSize, 2, getString(R.string.lbl_add_to_queue), new View.OnClickListener() {
                     @Override
                     public void onClick(View v) {
-                        mediaManager.getValue().addToAudioQueue(mItems);
+                        queueCompletePlaylist();
                     }
                 });
                 hidePlayButton = true;
                 mButtonRow.addView(queueButton);
                 queueButton.setOnFocusChangeListener((v, hasFocus) -> {
-                    if (hasFocus) mScrollView.smoothScrollTo(0, 0);
+                    if (hasFocus) mItemList.scrollToStart();
                 });
             }
 
@@ -426,7 +467,7 @@ public class ItemListFragment extends Fragment implements View.OnKeyListener {
                 });
                 mButtonRow.addView(shuffle);
                 shuffle.setOnFocusChangeListener((v, hasFocus) -> {
-                    if (hasFocus) mScrollView.smoothScrollTo(0, 0);
+                    if (hasFocus) mItemList.scrollToStart();
                 });
             }
         }
@@ -440,7 +481,7 @@ public class ItemListFragment extends Fragment implements View.OnKeyListener {
             });
             mButtonRow.addView(mix);
             mix.setOnFocusChangeListener((v, hasFocus) -> {
-                if (hasFocus) mScrollView.smoothScrollTo(0, 0);
+                if (hasFocus) mItemList.scrollToStart();
             });
         }
 
@@ -459,7 +500,7 @@ public class ItemListFragment extends Fragment implements View.OnKeyListener {
         fav.setActivated(mBaseItem.getUserData().isFavorite());
         mButtonRow.addView(fav);
         fav.setOnFocusChangeListener((v, hasFocus) -> {
-            if (hasFocus) mScrollView.smoothScrollTo(0, 0);
+            if (hasFocus) mItemList.scrollToStart();
         });
 
         if (mBaseItem.getAlbumArtists() != null && !mBaseItem.getAlbumArtists().isEmpty()) {
@@ -471,7 +512,7 @@ public class ItemListFragment extends Fragment implements View.OnKeyListener {
             });
             mButtonRow.addView(artist);
             artist.setOnFocusChangeListener((v, hasFocus) -> {
-                if (hasFocus) mScrollView.smoothScrollTo(0, 0);
+                if (hasFocus) mItemList.scrollToStart();
             });
         }
 

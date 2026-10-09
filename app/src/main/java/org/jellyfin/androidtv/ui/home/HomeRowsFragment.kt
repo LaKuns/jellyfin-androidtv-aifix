@@ -18,13 +18,17 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import org.jellyfin.androidtv.auth.repository.UserRepository
@@ -70,7 +74,12 @@ import kotlin.time.Duration.Companion.seconds
 class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyListener {
 	companion object {
 		private const val REFRESH_THROTTLE_MS = 2_000L
-		private const val REFRESH_ROW_DELAY_MS = 100L
+
+		/** How many rows may be fetched at the same time on a device with headroom. */
+		private const val MAX_CONCURRENT_ROW_RETRIEVALS = 2
+
+		/** Stricter limit for constrained devices, which the previous serial loop suited. */
+		private const val MAX_CONCURRENT_ROW_RETRIEVALS_LOW_PERFORMANCE = 1
 	}
 
 	private val api by inject<ApiClient>()
@@ -271,20 +280,33 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 					?.mapNotNull { row -> (row as? ListRow)?.adapter as? ItemRowAdapter }
 					.orEmpty()
 
-				for (rowAdapter in rowAdapters) {
-					if (!isActive) break
+				// Rows are fetched side by side instead of one after another. The serial loop
+				// made the first screen wait for the sum of every round trip, so a user with
+				// several libraries paid one full RTT per library before anything appeared.
+				// Concurrency is still capped, and rows are launched in display order so the
+				// top one wins the first permit.
+				coroutineScope {
+					val limiter = Semaphore(
+						if (lowPerformanceDevice) MAX_CONCURRENT_ROW_RETRIEVALS_LOW_PERFORMANCE
+						else MAX_CONCURRENT_ROW_RETRIEVALS
+					)
 
-					// An existing request is already the freshest result available;
-					// wait for it instead of starting a duplicate request.
-					if (!rowAdapter.isCurrentlyRetrieving()) {
-						if (refreshForce) rowAdapter.Retrieve()
-						else rowAdapter.ReRetrieveIfNeeded()
-					}
+					rowAdapters.mapNotNull { rowAdapter ->
+						// A row already loading has a fresher result on the way than a
+						// duplicate request would produce.
+						if (rowAdapter.isCurrentlyRetrieving()) return@mapNotNull null
 
-					// Keep refreshes sequential without waking the main thread every
-					// few milliseconds while a network request is in flight.
-					rowAdapter.awaitCurrentRetrieval()
-					if (isActive) delay(REFRESH_ROW_DELAY_MS)
+						launch {
+							limiter.withPermit {
+								if (!isActive) return@withPermit
+
+								if (refreshForce) rowAdapter.Retrieve()
+								else rowAdapter.ReRetrieveIfNeeded()
+
+								rowAdapter.awaitCurrentRetrieval()
+							}
+						}
+					}.joinAll()
 				}
 			}
 
