@@ -7,6 +7,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import org.jellyfin.androidtv.R
 import org.jellyfin.androidtv.preference.UserPreferences
+import org.jellyfin.androidtv.preference.constant.AudioBehavior
 import org.jellyfin.androidtv.preference.constant.BitstreamAudioFormat
 import org.jellyfin.androidtv.ui.base.Text
 import org.jellyfin.androidtv.ui.base.form.Checkbox
@@ -69,6 +70,23 @@ fun SettingsPlaybackCodecScreen() {
 					)
 				},
 				modifier = Modifier.focusKey("bitstream_audio_${format.name}"),
+			)
+		}
+
+		item {
+			var audioBehaviour by rememberPreference(userPreferences, UserPreferences.audioBehaviour)
+
+			ListButton(
+				headingContent = { Text(stringResource(R.string.lbl_audio_output)) },
+				captionContent = { Text(stringResource(audioBehaviour.nameRes)) },
+				onClick = {
+					audioBehaviour = if (audioBehaviour == AudioBehavior.DOWNMIX_TO_STEREO) {
+						AudioBehavior.DIRECT_STREAM
+					} else {
+						AudioBehavior.DOWNMIX_TO_STEREO
+					}
+				},
+				modifier = Modifier.focusKey("audio_behaviour")
 			)
 		}
 
