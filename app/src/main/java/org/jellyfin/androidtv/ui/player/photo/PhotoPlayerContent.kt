@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import org.jellyfin.androidtv.ui.composable.AsyncImage
 import org.jellyfin.androidtv.util.PerformanceProfile
@@ -50,9 +51,10 @@ fun PhotoPlayerContent(
 	item: BaseItemDto?,
 ) {
 	val api = koinInject<ApiClient>()
+	val context = LocalContext.current
 	val resources = LocalResources.current
-	val lowPerformanceDevice = remember(resources) {
-		PerformanceProfile.isLowPerformanceDevice(resources)
+	val lowPerformanceDevice = remember(context) {
+		PerformanceProfile.isLowPerformanceDevice(context)
 	}
 
 	// A photo is displayed fullscreen, so it is decoded at (a bounded) screen
