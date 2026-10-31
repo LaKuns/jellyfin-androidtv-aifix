@@ -19,7 +19,10 @@ import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.source.LoadEventInfo
+import androidx.media3.exoplayer.source.MediaLoadData
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.exoplayer.util.EventLogger
 import androidx.media3.extractor.DefaultExtractorsFactory
@@ -32,6 +35,7 @@ import io.github.peerless2012.ass.media.parser.AssSubtitleParserFactory
 import io.github.peerless2012.ass.media.type.AssRenderType
 import io.github.peerless2012.ass.media.widget.AssSubtitleView
 import org.jellyfin.playback.core.backend.BasePlayerBackend
+import org.jellyfin.playback.core.support.PlaybackThroughput
 import org.jellyfin.playback.core.mediastream.MediaStream
 import org.jellyfin.playback.core.mediastream.PlayableMediaStream
 import org.jellyfin.playback.core.mediastream.mediaStream
@@ -148,6 +152,24 @@ class ExoPlayerBackend(
 			.build()
 			.also { player ->
 				player.addListener(PlayerListener())
+
+				// Measure how fast this device is actually able to download media. The
+				// measurement is used to request a bitrate the device can sustain.
+				player.addAnalyticsListener(object : AnalyticsListener() {
+					override fun onLoadCompleted(
+						eventTime: AnalyticsListener.EventTime,
+						loadEventInfo: LoadEventInfo,
+						mediaLoadData: MediaLoadData,
+					) {
+						if (mediaLoadData.dataType != C.DATA_TYPE_MEDIA) return
+
+						PlaybackThroughput.record(
+							context,
+							loadEventInfo.bytesLoaded,
+							loadEventInfo.loadDurationMs,
+						)
+					}
+				})
 
 				if (exoPlayerOptions.enableDebugLogging) {
 					player.addAnalyticsListener(EventLogger())

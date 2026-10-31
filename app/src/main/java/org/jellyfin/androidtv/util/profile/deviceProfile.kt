@@ -3,6 +3,7 @@ package org.jellyfin.androidtv.util.profile
 import android.content.Context
 import android.util.Size
 import androidx.media3.common.MimeTypes
+import androidx.preference.PreferenceManager
 import org.jellyfin.androidtv.constant.Codec
 import org.jellyfin.androidtv.preference.UserPreferences
 import org.jellyfin.androidtv.preference.constant.AudioBehavior
@@ -11,6 +12,7 @@ import org.jellyfin.androidtv.preference.constant.BitstreamAudioMode
 import org.jellyfin.androidtv.preference.constant.HdrFormat
 import org.jellyfin.androidtv.preference.constant.HdrOverrideMode
 import org.jellyfin.androidtv.util.PerformanceProfile
+import org.jellyfin.playback.core.support.PlaybackThroughput
 import org.jellyfin.androidtv.util.profile.codec.isPassthroughAudioAvailable
 import org.jellyfin.sdk.model.ServerVersion
 import org.jellyfin.sdk.model.api.CodecType
@@ -92,23 +94,66 @@ private fun UserPreferences.isBitstreamAudioEnabled(context: Context, format: Bi
 		BitstreamAudioMode.DISABLE -> false
 	}
 
+/**
+ * Whether the user picked an audio behavior themselves.
+ *
+ * The automatic downmix is only applied while the preference is untouched, an explicit
+ * choice of the user always wins.
+ */
+private fun isAudioBehaviorSet(context: Context): Boolean =
+	PreferenceManager.getDefaultSharedPreferences(context).contains(AUDIO_BEHAVIOR_KEY)
+
+private const val AUDIO_BEHAVIOR_KEY = "audio_behavior"
+
 fun createDeviceProfile(
 	context: Context,
 	userPreferences: UserPreferences,
 	serverVersion: ServerVersion,
 ) = PerformanceProfile.isLowPerformanceDevice(context).let { lowPerformanceDevice ->
+	val mediaTest = MediaCodecCapabilitiesTest(
+		userPreferences[UserPreferences.softwareCodecsEnabled] && !lowPerformanceDevice
+	)
+
+	// A device without a hardware decoder for multichannel audio has to decode it in
+	// software, which is expensive enough on weak TV chips to starve the network loader.
+	// Asking the server to downmix the audio avoids that entirely. An explicit choice of
+	// the user is never overridden.
+	val hardwareAudioChannels = mediaTest.getMaxHardwareAudioChannels()
+	val downMixByDevice = lowPerformanceDevice && hardwareAudioChannels < 3 && !isAudioBehaviorSet(context)
+
+	// The requested bitrate is limited by what the device was actually able to download.
+	// A stream that cannot be fetched as fast as it is consumed empties the buffer and
+	// makes the playback stutter every few seconds, no matter how fast the server
+	// transcodes it.
+	val throughputLimit = PlaybackThroughput.getUsableBitrate(context)
+
 	createDeviceProfile(
-		mediaTest = MediaCodecCapabilitiesTest(
-			userPreferences[UserPreferences.softwareCodecsEnabled] && !lowPerformanceDevice
-		),
+		mediaTest = mediaTest,
 		maxBitrate = userPreferences.getMaxBitrate().let { bitrate ->
-			if (lowPerformanceDevice) minOf(bitrate, PerformanceProfile.LOW_PERFORMANCE_MAX_VIDEO_BITRATE) else bitrate
+			val deviceLimit = if (lowPerformanceDevice) {
+				minOf(bitrate, PerformanceProfile.LOW_PERFORMANCE_MAX_VIDEO_BITRATE)
+			} else {
+				bitrate
+			}
+
+			when {
+				// The measured throughput is the best estimate of what the device can
+				// sustain, and it may also raise the limit again on a fast connection.
+				throughputLimit > 0 -> minOf(deviceLimit, throughputLimit)
+				// Without a measurement a conservative value is used, TV boxes are
+				// usually limited by their wifi connection.
+				lowPerformanceDevice -> minOf(
+					deviceLimit,
+					PerformanceProfile.LOW_PERFORMANCE_DEFAULT_VIDEO_BITRATE,
+				)
+				else -> deviceLimit
+			}
 		},
 		isAC3PrefEnabled = userPreferences.isBitstreamAudioEnabled(context, BitstreamAudioFormat.AC3),
 		isEAC3PrefEnabled = userPreferences.isBitstreamAudioEnabled(context, BitstreamAudioFormat.EAC3),
 		isDTSPrefEnabled = userPreferences.isBitstreamAudioEnabled(context, BitstreamAudioFormat.DTS),
 		isTrueHDPrefEnabled = userPreferences.isBitstreamAudioEnabled(context, BitstreamAudioFormat.TRUEHD),
-		downMixAudio = userPreferences[UserPreferences.audioBehaviour] == AudioBehavior.DOWNMIX_TO_STEREO,
+		downMixAudio = userPreferences[UserPreferences.audioBehaviour] == AudioBehavior.DOWNMIX_TO_STEREO || downMixByDevice,
 		assDirectPlay = userPreferences[UserPreferences.assDirectPlay],
 		pgsDirectPlay = userPreferences[UserPreferences.pgsDirectPlay],
 		userAVCLevel = userPreferences[UserPreferences.userAVCLevel].level,

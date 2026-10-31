@@ -38,6 +38,8 @@ import androidx.media3.exoplayer.DefaultRenderersFactory;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.exoplayer.analytics.AnalyticsListener;
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
+import androidx.media3.exoplayer.source.LoadEventInfo;
+import androidx.media3.exoplayer.source.MediaLoadData;
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector;
 import androidx.media3.exoplayer.util.EventLogger;
 import androidx.media3.extractor.DefaultExtractorsFactory;
@@ -53,6 +55,7 @@ import org.jellyfin.androidtv.preference.UserPreferences;
 import org.jellyfin.androidtv.preference.constant.BufferLength;
 import org.jellyfin.androidtv.preference.constant.ZoomMode;
 import org.jellyfin.androidtv.util.PerformanceProfile;
+import org.jellyfin.playback.core.support.PlaybackThroughput;
 import org.jellyfin.sdk.api.client.ApiClient;
 import org.jellyfin.sdk.model.api.MediaStream;
 import org.jellyfin.sdk.model.api.MediaStreamType;
@@ -122,6 +125,18 @@ public class VideoManager {
         if (userPreferences.get(UserPreferences.Companion.getDebuggingEnabled())) {
             mExoPlayer.addAnalyticsListener(new EventLogger());
         }
+
+        // Measure how fast this device is actually able to download media. The measurement is
+        // used to request a bitrate the device can sustain, otherwise the buffer runs dry and
+        // the playback stutters every few seconds.
+        mExoPlayer.addAnalyticsListener(new AnalyticsListener() {
+            @Override
+            public void onLoadCompleted(@NonNull EventTime eventTime, @NonNull LoadEventInfo loadEventInfo, @NonNull MediaLoadData mediaLoadData) {
+                if (mediaLoadData.getDataType() != C.DATA_TYPE_MEDIA) return;
+
+                PlaybackThroughput.record(mActivity, loadEventInfo.bytesLoaded, loadEventInfo.loadDurationMs);
+            }
+        });
 
         // Volume normalisation (audio night mode).
         if (nightModeEnabled) {
@@ -301,8 +316,10 @@ public class VideoManager {
             // Keep the allocator small enough for low-memory TV boxes. The server-side
             // profile limits expensive media, so a short buffer is enough to absorb normal
             // network jitter without holding tens of megabytes of compressed video.
+            // The rebuffer threshold is generous so a single hiccup does not show the
+            // buffering spinner.
             loadControl = new DefaultLoadControl.Builder()
-                    .setBufferDurationsMs(10_000, 30_000, 1_500, 3_000)
+                    .setBufferDurationsMs(15_000, 30_000, 2_500, 5_000)
                     .setBackBuffer(0, false)
                     .setPrioritizeTimeOverSizeThresholds(true)
                     .build();

@@ -20,6 +20,7 @@ import org.jellyfin.androidtv.util.appendSection
 import org.jellyfin.androidtv.util.appendValue
 import org.jellyfin.androidtv.util.buildMarkdown
 import org.jellyfin.androidtv.util.profile.codec.isPassthroughAudioAvailable
+import org.jellyfin.playback.core.support.PlaybackThroughput
 import org.jellyfin.sdk.api.client.util.ApiSerializer
 import org.jellyfin.sdk.model.ServerVersion
 import kotlin.time.Duration.Companion.nanoseconds
@@ -274,6 +275,26 @@ fun createDeviceProfileReport(
 			appendItem("Ratio") { appendValue(display.hdrSdrRatio.toString()) }
 			if (AndroidVersion.isAtLeastBaklava) {
 				appendItem("Highest ratio") { appendValue(display.highestHdrSdrRatio.toString()) }
+			}
+		}
+	}
+
+	appendDetails("Network information") {
+		val lastMeasured = PlaybackThroughput.getLastMeasuredBitrate(context)
+		val usable = PlaybackThroughput.getUsableBitrate(context)
+
+		appendItem("Last measured download throughput") {
+			if (lastMeasured > 0) {
+				appendValue("${lastMeasured / 1_000_000} Mbps")
+			} else {
+				appendValue("not measured yet")
+			}
+		}
+		appendItem("Requested bitrate limit") {
+			if (usable > 0) {
+				appendValue("${usable / 1_000_000} Mbps")
+			} else {
+				appendValue("not limited by throughput")
 			}
 		}
 	}

@@ -56,4 +56,11 @@ class MediaCodecCapabilitiesTest(
 	fun getMaxResolution(mime: String): Size = codecQuery.getMaxResolution(mime)
 
 	fun getMaxAudioChannels(): Int = codecQuery.getMaxAudioChannels(MimeTypes.AUDIO_AAC)
+
+	/**
+	 * The highest number of channels a hardware decoder can handle. Multichannel audio that
+	 * has to be decoded in software is expensive enough on weak TV chips to starve the
+	 * network loader and make the playback stutter.
+	 */
+	fun getMaxHardwareAudioChannels(): Int = codecQuery.getMaxHardwareAudioChannels(MimeTypes.AUDIO_AAC)
 }

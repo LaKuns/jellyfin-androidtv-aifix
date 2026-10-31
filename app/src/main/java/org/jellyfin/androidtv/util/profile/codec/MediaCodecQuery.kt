@@ -100,6 +100,29 @@ class MediaCodecQuery(
 		return maxChannels
 	}
 
+	/**
+	 * The highest number of audio channels a *hardware* decoder of this device can handle.
+	 *
+	 * Software decoders accept any channel layout, but decoding multichannel audio in
+	 * software costs enough CPU on weak TV chips to starve the network loader. When no
+	 * hardware decoder can handle more than stereo the server should downmix the audio
+	 * instead of sending a multichannel stream that has to be decoded in software.
+	 */
+	fun getMaxHardwareAudioChannels(mime: String): Int {
+		var maxChannels = 0
+
+		for (info in mediaCodecList.codecInfos.asSequence()) {
+			if (info.isEncoder || info.isSoftwareCodec) continue
+
+			val capabilities = getCapabilitiesOrNull(info, mime) ?: continue
+			val channels = capabilities.audioCapabilities?.maxInputChannelCount ?: continue
+			if (channels > maxChannels) maxChannels = channels
+		}
+
+		Timber.d("Computed max hardware audio channels for %s: %d", mime, maxChannels)
+		return maxChannels
+	}
+
 	fun supportsMultiInstance(mime: String): Boolean =
 		decoderInfos().any { info -> hasMultipleInstances(info, mime) }
 

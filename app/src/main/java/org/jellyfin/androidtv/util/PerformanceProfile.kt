@@ -54,6 +54,16 @@ object PerformanceProfile {
 	// moving Blu-ray remuxes and other high-load streams to the server.
 	const val LOW_PERFORMANCE_MAX_VIDEO_BITRATE = 18_000_000
 
+	/**
+	 * Bitrate requested from the server before the real throughput of the device is known.
+	 *
+	 * TV boxes are usually connected by wifi, which is often the limiting factor of the
+	 * whole playback. A stream that cannot be downloaded as fast as it is consumed empties
+	 * the buffer and makes the playback stutter every few seconds, so the requested bitrate
+	 * starts below the measured throughput of such devices and is corrected afterwards.
+	 */
+	const val LOW_PERFORMANCE_DEFAULT_VIDEO_BITRATE = 8_000_000
+
 	@JvmStatic
 	fun isLowPerformanceDevice(context: Context): Boolean {
 		// Reading the preference first is required so an explicit user choice always wins,

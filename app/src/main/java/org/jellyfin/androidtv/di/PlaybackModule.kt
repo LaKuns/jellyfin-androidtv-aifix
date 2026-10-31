@@ -84,10 +84,10 @@ fun Scope.createPlaybackManager() = playbackManager(androidContext()) {
 		// turns a playable stream into a hard playback error.
 		enableDecoderFallback = true,
 		baseDataSourceFactory = get<HttpDataSource.Factory>(),
-		minBufferDuration = if (lowPerformanceDevice) 10.seconds else bufferLength.minBufferDuration,
+		minBufferDuration = if (lowPerformanceDevice) 15.seconds else bufferLength.minBufferDuration,
 		maxBufferDuration = if (lowPerformanceDevice) 30.seconds else bufferLength.maxBufferDuration,
-		bufferForPlaybackDuration = if (lowPerformanceDevice) 1.5.seconds else bufferLength.bufferForPlaybackDuration,
-		bufferForPlaybackAfterRebufferDuration = if (lowPerformanceDevice) 3.seconds else bufferLength.bufferForPlaybackAfterRebufferDuration,
+		bufferForPlaybackDuration = if (lowPerformanceDevice) 2.5.seconds else bufferLength.bufferForPlaybackDuration,
+		bufferForPlaybackAfterRebufferDuration = if (lowPerformanceDevice) 5.seconds else bufferLength.bufferForPlaybackAfterRebufferDuration,
 	)
 	install(exoPlayerPlugin(get(), exoPlayerOptions))
 
