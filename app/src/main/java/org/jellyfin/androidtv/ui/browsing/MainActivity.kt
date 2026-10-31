@@ -20,6 +20,7 @@ import kotlinx.coroutines.launch
 import org.jellyfin.androidtv.auth.repository.SessionRepository
 import org.jellyfin.androidtv.auth.repository.UserRepository
 import org.jellyfin.androidtv.integration.LeanbackChannelWorker
+import org.jellyfin.androidtv.preference.UserPreferences
 import org.jellyfin.androidtv.ui.InteractionTrackerViewModel
 import org.jellyfin.androidtv.ui.background.AppBackground
 import org.jellyfin.androidtv.ui.base.JellyfinTheme
@@ -30,6 +31,9 @@ import org.jellyfin.androidtv.ui.screensaver.InAppScreensaver
 import org.jellyfin.androidtv.ui.settings.compat.MainActivitySettings
 import org.jellyfin.androidtv.ui.startup.StartupActivity
 import org.jellyfin.androidtv.util.applyTheme
+import org.jellyfin.androidtv.util.profile.DeviceProfileReporter
+import org.jellyfin.sdk.api.client.ApiClient
+import org.jellyfin.sdk.model.ServerVersion
 import org.koin.android.ext.android.inject
 import org.koin.androidx.viewmodel.ext.android.viewModel
 import timber.log.Timber
@@ -40,6 +44,9 @@ class MainActivity : FragmentActivity() {
 	private val userRepository by inject<UserRepository>()
 	private val interactionTrackerViewModel by viewModel<InteractionTrackerViewModel>()
 	private val workManager by inject<WorkManager>()
+	private val api by inject<ApiClient>()
+	private val userPreferences by inject<UserPreferences>()
+	private val serverVersion by inject<ServerVersion>()
 
 	override fun onCreate(savedInstanceState: Bundle?) {
 		applyTheme()
@@ -47,6 +54,12 @@ class MainActivity : FragmentActivity() {
 		super.onCreate(savedInstanceState)
 
 		if (!validateAuthentication()) return
+
+		// Send the capabilities of this device to the server so the device profile and the
+		// decoder list can be inspected from the server log.
+		lifecycleScope.launch {
+			DeviceProfileReporter.reportOnce(this@MainActivity, api, userPreferences, serverVersion)
+		}
 
 		interactionTrackerViewModel.keepScreenOn.flowWithLifecycle(lifecycle, Lifecycle.State.RESUMED)
 			.onEach { keepScreenOn ->

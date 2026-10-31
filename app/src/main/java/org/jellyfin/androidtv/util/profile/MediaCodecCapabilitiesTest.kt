@@ -54,4 +54,6 @@ class MediaCodecCapabilitiesTest(
 	fun supportsVc1(): Boolean = codecQuery.hasCodecForMime(MimeTypes.VIDEO_VC1)
 
 	fun getMaxResolution(mime: String): Size = codecQuery.getMaxResolution(mime)
+
+	fun getMaxAudioChannels(): Int = codecQuery.getMaxAudioChannels(MimeTypes.AUDIO_AAC)
 }

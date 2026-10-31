@@ -79,7 +79,10 @@ fun Scope.createPlaybackManager() = playbackManager(androidContext()) {
 		preferFfmpeg = userPreferences[UserPreferences.preferExoPlayerFfmpeg],
 		enableLibass = userPreferences[UserPreferences.assDirectPlay],
 		enableDebugLogging = userPreferences[UserPreferences.debuggingEnabled],
-		enableDecoderFallback = !lowPerformanceDevice,
+		// Keep the decoder fallback enabled: it is the only way some TV chips can play
+		// streams their hardware decoder rejects (e.g. multichannel AAC). Disabling it
+		// turns a playable stream into a hard playback error.
+		enableDecoderFallback = true,
 		baseDataSourceFactory = get<HttpDataSource.Factory>(),
 		minBufferDuration = if (lowPerformanceDevice) 10.seconds else bufferLength.minBufferDuration,
 		maxBufferDuration = if (lowPerformanceDevice) 30.seconds else bufferLength.maxBufferDuration,

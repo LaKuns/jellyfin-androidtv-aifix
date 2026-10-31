@@ -598,11 +598,19 @@ fun createDeviceProfile(
 	}
 
 	// Audio channel profile
+	// The real limit of the device is reported so the server downmixes the audio to a
+	// channel layout the TV can decode. TV chips commonly only decode stereo AAC and a
+	// multichannel stream that cannot be decoded aborts the playback completely.
+	val maxAudioChannels = when {
+		downMixAudio -> 2
+		else -> mediaTest.getMaxAudioChannels().takeIf { it > 0 }?.coerceAtMost(8) ?: 8
+	}
+
 	codecProfile {
 		type = CodecType.VIDEO_AUDIO
 
 		conditions {
-			ProfileConditionValue.AUDIO_CHANNELS lowerThanOrEquals if (downMixAudio) 2 else 8
+			ProfileConditionValue.AUDIO_CHANNELS lowerThanOrEquals maxAudioChannels
 		}
 	}
 

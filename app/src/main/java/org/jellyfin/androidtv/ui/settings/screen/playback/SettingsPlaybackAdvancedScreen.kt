@@ -1,7 +1,5 @@
 package org.jellyfin.androidtv.ui.settings.screen.playback
 
-import android.annotation.SuppressLint
-import android.widget.Toast
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -32,13 +30,9 @@ import org.jellyfin.androidtv.ui.navigation.LocalRouter
 import org.jellyfin.androidtv.ui.navigation.focus.focusKey
 import org.jellyfin.androidtv.ui.settings.Routes
 import org.jellyfin.androidtv.ui.settings.compat.rememberPreference
-import org.jellyfin.androidtv.ui.settings.composable.SettingsAsyncActionListButton
+import org.jellyfin.androidtv.ui.settings.composable.ReportDeviceProfileButton
 import org.jellyfin.androidtv.ui.settings.composable.SettingsColumn
-import org.jellyfin.androidtv.util.profile.createDeviceProfileReport
 import org.jellyfin.design.Tokens
-import org.jellyfin.sdk.api.client.ApiClient
-import org.jellyfin.sdk.api.client.extensions.clientLogApi
-import org.jellyfin.sdk.model.ServerVersion
 import org.koin.compose.koinInject
 import java.text.DecimalFormat
 import kotlin.math.roundToInt
@@ -324,30 +318,7 @@ fun SettingsPlaybackAdvancedScreen() {
 		item { ListSection(headingContent = { Text(stringResource(R.string.pref_troubleshooting)) }) }
 
 		item {
-			val api = koinInject<ApiClient>()
-			val serverVersion = koinInject<ServerVersion>()
-
-			SettingsAsyncActionListButton(
-				headingContent = { Text(stringResource(R.string.pref_report_device_profile_title)) },
-				captionContent = { Text(stringResource(R.string.pref_report_device_profile_summary)) },
-				action = {
-					val report = createDeviceProfileReport(context, userPreferences, serverVersion)
-					val response by api.clientLogApi.logFile(report)
-					response
-				},
-				onSuccess = { result ->
-					Toast.makeText(
-						context,
-						@SuppressLint("LocalContextGetResourceValueCall")
-						context.getString(R.string.pref_report_device_profile_success, result.fileName),
-						Toast.LENGTH_LONG
-					).show()
-				},
-				onFailure = {
-					Toast.makeText(context, R.string.pref_report_device_profile_failure, Toast.LENGTH_LONG).show()
-				},
-				modifier = Modifier.focusKey("report_device_profile")
-			)
+			ReportDeviceProfileButton()
 		}
 	}
 }

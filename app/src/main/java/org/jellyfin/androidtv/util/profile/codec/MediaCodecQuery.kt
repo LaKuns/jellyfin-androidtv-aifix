@@ -81,6 +81,25 @@ class MediaCodecQuery(
 		return Size(maxWidth, maxHeight)
 	}
 
+	/**
+	 * The highest number of audio channels the decoders of this device can handle.
+	 *
+	 * Many TV chips only decode stereo AAC. Reporting the real limit makes the server
+	 * downmix the audio instead of sending a multichannel stream the device cannot play.
+	 */
+	fun getMaxAudioChannels(mime: String): Int {
+		var maxChannels = 0
+
+		for (info in decoderInfos()) {
+			val capabilities = getCapabilitiesOrNull(info, mime) ?: continue
+			val channels = capabilities.audioCapabilities?.maxInputChannelCount ?: continue
+			if (channels > maxChannels) maxChannels = channels
+		}
+
+		Timber.d("Computed max audio channels for %s: %d", mime, maxChannels)
+		return maxChannels
+	}
+
 	fun supportsMultiInstance(mime: String): Boolean =
 		decoderInfos().any { info -> hasMultipleInstances(info, mime) }
 

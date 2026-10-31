@@ -12,6 +12,7 @@ import org.jellyfin.androidtv.ui.base.list.ListSection
 import org.jellyfin.androidtv.ui.navigation.LocalRouter
 import org.jellyfin.androidtv.ui.navigation.focus.focusKey
 import org.jellyfin.androidtv.ui.settings.Routes
+import org.jellyfin.androidtv.ui.settings.composable.ReportDeviceProfileButton
 import org.jellyfin.androidtv.ui.settings.composable.SettingsColumn
 
 @Composable
@@ -62,6 +63,23 @@ fun SettingsMainScreen() {
 				onClick = { router.push(Routes.PLAYBACK) },
 				modifier = Modifier.focusKey(Routes.PLAYBACK),
 			)
+		}
+
+		// The codec options decide whether the server transcodes a file, so they are
+		// reachable directly from the settings instead of only through the playback
+		// screens.
+		item {
+			ListButton(
+				leadingContent = { Icon(painterResource(R.drawable.ic_clapperboard), contentDescription = null) },
+				headingContent = { Text(stringResource(R.string.preference_codecs)) },
+				captionContent = { Text(stringResource(R.string.preference_codecs_summary)) },
+				onClick = { router.push(Routes.PLAYBACK_CODEC) },
+				modifier = Modifier.focusKey(Routes.PLAYBACK_CODEC),
+			)
+		}
+
+		item {
+			ReportDeviceProfileButton()
 		}
 
 		item {
