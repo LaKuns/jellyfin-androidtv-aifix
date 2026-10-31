@@ -132,6 +132,18 @@ class UserPreferences(context: Context) : SharedPreferenceStore(
 		var userHEVCLevel = enumPreference("user_hevc_level", HEVCLevel.AUTO)
 
 		/**
+		 * Disable HEVC (H.265) direct play. The server transcodes HEVC files to H.264 instead,
+		 * keeping the original resolution.
+		 */
+		var disableHevcDirectPlay = booleanPreference("disable_hevc_direct_play", defaultValue = false)
+
+		/**
+		 * Disable direct play of 10 bit HEVC (Main 10) only. 8 bit HEVC keeps being direct played.
+		 * The server transcodes 10 bit files to H.264 instead, keeping the original resolution.
+		 */
+		var disableHevcMain10DirectPlay = booleanPreference("disable_hevc_main10_direct_play", defaultValue = false)
+
+		/**
 		 * Playback buffer size preset.
 		 */
 		var bufferLength = enumPreference("buffer_length", BufferLength.AUTO)

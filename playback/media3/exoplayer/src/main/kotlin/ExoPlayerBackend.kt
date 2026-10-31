@@ -101,7 +101,11 @@ class ExoPlayerBackend(
 		} else DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
 
 		val renderersFactory = DefaultRenderersFactory(context).apply {
-			setEnableDecoderFallback(true)
+			// Falling back to a software decoder hides the real problem: the device advertises
+			// hardware support for a format it can only decode in software and the playback
+			// silently stalls instead of failing. Devices that are known to be slow should get
+			// an error instead of a frozen picture.
+			setEnableDecoderFallback(exoPlayerOptions.enableDecoderFallback)
 			setExtensionRendererMode(
 				when (exoPlayerOptions.preferFfmpeg) {
 					true -> DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER

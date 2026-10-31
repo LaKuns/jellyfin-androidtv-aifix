@@ -9,6 +9,21 @@ import org.jellyfin.androidtv.util.AndroidVersion
 import timber.log.Timber
 
 /**
+ * [MediaCodecInfo.isSoftwareOnly] was only added in Android 10 (API 29). On older releases the
+ * property does not exist, so software decoders have to be detected by name instead.
+ *
+ * Without this fallback the "use software codecs" option has no effect at all on Android 9 and
+ * older: the device profile then claims support for formats that the device can only decode in
+ * software. The server direct plays those files and the playback stalls instead of being
+ * transcoded on the server.
+ */
+private fun isKnownSoftwareCodecName(name: String): Boolean =
+	name.startsWith("OMX.google.") ||
+		name.startsWith("OMX.ffmpeg.") ||
+		name.startsWith("c2.android.") ||
+		name.startsWith("c2.google.")
+
+/**
  * Queries device codec capabilities from Android's [MediaCodecList].
  */
 class MediaCodecQuery(
@@ -16,7 +31,7 @@ class MediaCodecQuery(
 	private val softwareCodecsEnabled: Boolean,
 ) {
 	private val MediaCodecInfo.isSoftwareCodec: Boolean
-		get() = AndroidVersion.isAtLeastQ && isSoftwareOnly
+		get() = if (AndroidVersion.isAtLeastQ) isSoftwareOnly else isKnownSoftwareCodecName(name)
 
 	private fun decoderInfos(): Sequence<MediaCodecInfo> =
 		mediaCodecList.codecInfos.asSequence()

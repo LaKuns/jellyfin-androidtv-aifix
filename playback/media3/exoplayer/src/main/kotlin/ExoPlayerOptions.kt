@@ -8,6 +8,7 @@ data class ExoPlayerOptions(
 	val preferFfmpeg: Boolean = false,
 	val enableDebugLogging: Boolean = false,
 	val enableLibass: Boolean = false,
+	val enableDecoderFallback: Boolean = true,
 	val baseDataSourceFactory: DataSource.Factory = DefaultHttpDataSource.Factory(),
 	val minBufferDuration: Duration? = null,
 	val maxBufferDuration: Duration? = null,

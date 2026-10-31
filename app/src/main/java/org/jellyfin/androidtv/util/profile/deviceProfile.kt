@@ -115,6 +115,8 @@ fun createDeviceProfile(
 		userHEVCLevel = userPreferences[UserPreferences.userHEVCLevel].level,
 		forceEnabledHdr = userPreferences.getHdrRangeTypesFor(HdrOverrideMode.ENABLE),
 		forceDisabledHdr = userPreferences.getHdrRangeTypesFor(HdrOverrideMode.DISABLE),
+		disableHevcDirectPlay = userPreferences[UserPreferences.disableHevcDirectPlay],
+		disableHevcMain10DirectPlay = userPreferences[UserPreferences.disableHevcMain10DirectPlay],
 		maxVideoWidth = PerformanceProfile.LOW_PERFORMANCE_MAX_VIDEO_WIDTH.takeIf { lowPerformanceDevice },
 		maxVideoHeight = PerformanceProfile.LOW_PERFORMANCE_MAX_VIDEO_HEIGHT.takeIf { lowPerformanceDevice },
 	)
@@ -134,6 +136,8 @@ fun createDeviceProfile(
 	userHEVCLevel: Int?,
 	forceEnabledHdr: Set<VideoRangeType>,
 	forceDisabledHdr: Set<VideoRangeType>,
+	disableHevcDirectPlay: Boolean = false,
+	disableHevcMain10DirectPlay: Boolean = false,
 	maxVideoWidth: Int? = null,
 	maxVideoHeight: Int? = null,
 ) = buildDeviceProfile {
@@ -150,8 +154,14 @@ fun createDeviceProfile(
 		}
 	}.toTypedArray()
 
-	val supportsHevc = mediaTest.supportsHevc()
-	val supportsHevcMain10 = mediaTest.supportsHevcMain10()
+	// HEVC direct play can be disabled by the user. A device that reports HEVC support but can
+	// only decode it in software stalls the playback completely, so it is safer to let the
+	// server transcode those files to H.264 at the original resolution instead.
+	val hevcDirectPlayEnabled = !disableHevcDirectPlay
+	val hevcMain10DirectPlayEnabled = hevcDirectPlayEnabled && !disableHevcMain10DirectPlay
+
+	val supportsHevc = mediaTest.supportsHevc() && hevcDirectPlayEnabled
+	val supportsHevcMain10 = mediaTest.supportsHevcMain10() && hevcMain10DirectPlayEnabled
 	val hevcMainLevel = userHEVCLevel ?: mediaTest.getHevcMainLevel()
 	val hevcMain10Level = userHEVCLevel ?: mediaTest.getHevcMain10Level()
 	val supportsAVC = mediaTest.supportsAVC()
@@ -188,8 +198,11 @@ fun createDeviceProfile(
 
 	/// Transcoding profiles
 	// Video
+	// HEVC is only offered as a transcode target while the HEVC decoder is trusted. The server
+	// keeps the profile of the source, so a Main 10 source would be transcoded to Main 10
+	// HEVC again, which is exactly the format the device cannot decode.
 	val hlsVideoCodecs = listOfNotNull(
-		if (supportsHevc) Codec.Video.HEVC else null,
+		if (supportsHevc && hevcMain10DirectPlayEnabled) Codec.Video.HEVC else null,
 		Codec.Video.H264
 	).toTypedArray()
 

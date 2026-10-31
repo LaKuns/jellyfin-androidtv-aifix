@@ -17,7 +17,6 @@ import org.jellyfin.androidtv.ui.navigation.focus.focusKey
 import org.jellyfin.androidtv.ui.settings.Routes
 import org.jellyfin.androidtv.ui.settings.compat.rememberPreference
 import org.jellyfin.androidtv.ui.settings.composable.SettingsColumn
-import org.jellyfin.androidtv.util.AndroidVersion
 import org.koin.compose.koinInject
 
 @Composable
@@ -73,18 +72,40 @@ fun SettingsPlaybackCodecScreen() {
 			)
 		}
 
-		if (AndroidVersion.isAtLeastQ) {
-			item {
-				var softwareCodecsEnabled by rememberPreference(userPreferences, UserPreferences.softwareCodecsEnabled)
+		item {
+			var disableHevcMain10DirectPlay by rememberPreference(userPreferences, UserPreferences.disableHevcMain10DirectPlay)
 
-				ListButton(
-					headingContent = { Text(stringResource(R.string.pref_software_codecs_enabled)) },
-					captionContent = { Text(stringResource(R.string.pref_software_codecs_enabled_description)) },
-					trailingContent = { Checkbox(checked = softwareCodecsEnabled) },
-					onClick = { softwareCodecsEnabled = !softwareCodecsEnabled },
-					modifier = Modifier.focusKey("software_codecs_enabled")
-				)
-			}
+			ListButton(
+				headingContent = { Text(stringResource(R.string.pref_disable_hevc_main10_direct_play)) },
+				captionContent = { Text(stringResource(R.string.pref_disable_hevc_main10_direct_play_description)) },
+				trailingContent = { Checkbox(checked = disableHevcMain10DirectPlay) },
+				onClick = { disableHevcMain10DirectPlay = !disableHevcMain10DirectPlay },
+				modifier = Modifier.focusKey("disable_hevc_main10_direct_play")
+			)
+		}
+
+		item {
+			var disableHevcDirectPlay by rememberPreference(userPreferences, UserPreferences.disableHevcDirectPlay)
+
+			ListButton(
+				headingContent = { Text(stringResource(R.string.pref_disable_hevc_direct_play)) },
+				captionContent = { Text(stringResource(R.string.pref_disable_hevc_direct_play_description)) },
+				trailingContent = { Checkbox(checked = disableHevcDirectPlay) },
+				onClick = { disableHevcDirectPlay = !disableHevcDirectPlay },
+				modifier = Modifier.focusKey("disable_hevc_direct_play")
+			)
+		}
+
+		item {
+			var softwareCodecsEnabled by rememberPreference(userPreferences, UserPreferences.softwareCodecsEnabled)
+
+			ListButton(
+				headingContent = { Text(stringResource(R.string.pref_software_codecs_enabled)) },
+				captionContent = { Text(stringResource(R.string.pref_software_codecs_enabled_description)) },
+				trailingContent = { Checkbox(checked = softwareCodecsEnabled) },
+				onClick = { softwareCodecsEnabled = !softwareCodecsEnabled },
+				modifier = Modifier.focusKey("software_codecs_enabled")
+			)
 		}
 	}
 }
