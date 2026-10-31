@@ -107,6 +107,7 @@ class AsyncImageView @JvmOverloads constructor(
 	 * the [placeholder] is shown. A [blurHash] is shown while loading the image. An aspect ratio is
 	 * required when using a BlurHash or the sizing will be incorrect.
 	 */
+	@JvmOverloads
 	fun load(
 		url: String? = null,
 		blurHash: String? = null,

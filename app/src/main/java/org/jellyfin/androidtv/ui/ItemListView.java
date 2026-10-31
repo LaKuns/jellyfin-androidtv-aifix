@@ -178,7 +178,7 @@ public class ItemListView extends RecyclerView {
             }
         };
         scroller.setTargetPosition(position);
-        startSmoothScroll(scroller);
+        mLayoutManager.startSmoothScroll(scroller);
     }
 
     /** Scroll back to the first row, replacing the old "scroll the page to the top" call. */
