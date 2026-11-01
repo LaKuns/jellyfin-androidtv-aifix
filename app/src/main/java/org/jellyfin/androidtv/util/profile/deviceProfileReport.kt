@@ -280,9 +280,17 @@ fun createDeviceProfileReport(
 	}
 
 	appendDetails("Network information") {
+		val linkBitrate = PlaybackThroughput.getLinkBitrate(context)
 		val lastMeasured = PlaybackThroughput.getLastMeasuredBitrate(context)
 		val usable = PlaybackThroughput.getUsableBitrate(context)
 
+		appendItem("Connection speed (no decoding)") {
+			if (linkBitrate > 0) {
+				appendValue("${linkBitrate / 1_000_000} Mbps")
+			} else {
+				appendValue("not measured yet")
+			}
+		}
 		appendItem("Last measured download throughput") {
 			if (lastMeasured > 0) {
 				appendValue("${lastMeasured / 1_000_000} Mbps")

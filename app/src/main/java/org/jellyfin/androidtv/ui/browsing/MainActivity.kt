@@ -31,7 +31,9 @@ import org.jellyfin.androidtv.ui.screensaver.InAppScreensaver
 import org.jellyfin.androidtv.ui.settings.compat.MainActivitySettings
 import org.jellyfin.androidtv.ui.startup.StartupActivity
 import org.jellyfin.androidtv.util.applyTheme
+import org.jellyfin.androidtv.util.NetworkProbe
 import org.jellyfin.androidtv.util.profile.DeviceProfileReporter
+import org.jellyfin.playback.core.support.PlaybackThroughput
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.model.ServerVersion
 import org.koin.android.ext.android.inject
@@ -58,6 +60,10 @@ class MainActivity : FragmentActivity() {
 		// Send the capabilities of this device to the server so the device profile and the
 		// decoder list can be inspected from the server log.
 		lifecycleScope.launch {
+			// Measure the speed of the connection without decoding anything, so a slow
+			// playback can be attributed to the network or to the device itself.
+			NetworkProbe.measureOnce(api)?.let { PlaybackThroughput.recordLinkBitrate(this@MainActivity, it) }
+
 			DeviceProfileReporter.reportOnce(this@MainActivity, api, userPreferences, serverVersion)
 		}
 

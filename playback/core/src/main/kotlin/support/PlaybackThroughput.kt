@@ -19,6 +19,7 @@ object PlaybackThroughput {
 	private const val PREFERENCES_NAME = "playback_throughput"
 	private const val KEY_AVERAGE = "average_bps"
 	private const val KEY_LAST = "last_bps"
+	private const val KEY_LINK = "link_bps"
 
 	/** Number of downloads that are averaged. */
 	private const val WINDOW_SIZE = 8
@@ -94,4 +95,26 @@ object PlaybackThroughput {
 	fun getLastMeasuredBitrate(context: Context): Long =
 		context.applicationContext.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
 			.getLong(KEY_LAST, 0)
+
+	/**
+	 * Stores the throughput of the connection, measured without any decoding.
+	 *
+	 * It is only used for diagnostics: it shows whether a slow playback is caused by the
+	 * connection or by the device itself.
+	 */
+	@JvmStatic
+	fun recordLinkBitrate(context: Context, bitsPerSecond: Long) {
+		context.applicationContext.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+			.edit()
+			.putLong(KEY_LINK, bitsPerSecond)
+			.apply()
+	}
+
+	/**
+	 * The throughput of the connection, measured without any decoding.
+	 */
+	@JvmStatic
+	fun getLinkBitrate(context: Context): Long =
+		context.applicationContext.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+			.getLong(KEY_LINK, 0)
 }
