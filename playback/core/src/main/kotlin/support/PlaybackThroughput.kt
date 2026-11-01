@@ -51,6 +51,15 @@ object PlaybackThroughput {
 	 */
 	private const val MAX_SAMPLE_BYTES = 16L * 1024 * 1024
 
+	/**
+	 * Downloads slower than this are not a measurement of the connection.
+	 *
+	 * A file that is read at the speed it is played back shows the bitrate of the file,
+	 * not the speed of the connection. Such a sample is useless and would only lower the
+	 * requested bitrate for no reason.
+	 */
+	private const val MIN_SAMPLE_BPS = 2_000_000L
+
 	private val samples = ArrayDeque<Long>()
 
 	/**
@@ -67,6 +76,7 @@ object PlaybackThroughput {
 		if (loadDurationMs <= 0) return
 
 		val bitsPerSecond = bytesLoaded * 8 * 1000 / loadDurationMs
+		if (bitsPerSecond < MIN_SAMPLE_BPS) return
 
 		samples.addLast(bitsPerSecond)
 		while (samples.size > WINDOW_SIZE) samples.removeFirst()
