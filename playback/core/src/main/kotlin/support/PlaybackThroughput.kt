@@ -48,6 +48,16 @@ object PlaybackThroughput {
 	 */
 	private const val USABLE_FRACTION = 0.75
 
+	/**
+	 * Bitrate that is reserved for the audio that is transcoded along with the video.
+	 *
+	 * The server takes the requested bitrate, subtracts the bitrate of the audio and
+	 * compares the remainder with the bitrate of the video stream of the source. A
+	 * request that does not carry the audio therefore ends up below the bitrate of
+	 * the source and the video is scaled down.
+	 */
+	private const val AUDIO_HEADROOM = 1_000_000
+
 	/** Lower bound of the request, playback should never degrade into an unusable bitrate. */
 	private const val MIN_BITRATE = 2_000_000
 
@@ -120,16 +130,6 @@ object PlaybackThroughput {
 			.getLong(KEY_AVERAGE, 0)
 
 	/**
-	 * Whether a media download was measured at all.
-	 *
-	 * This matters because the throughput of the connection alone must never raise
-	 * the requested bitrate: a fast connection says nothing about how fast the
-	 * device can pull a media stream while it decodes it.
-	 */
-	@JvmStatic
-	fun hasMediaMeasurement(context: Context): Boolean = getAverageBitrate(context) > 0
-
-	/**
 	 * The highest download rate the device has achieved so far.
 	 *
 	 * The average of the downloads is not a good measure of the capability of the
@@ -173,62 +173,61 @@ object PlaybackThroughput {
 	 * far and the connection is able to carry it.
 	 *
 	 * @param context Used to read the measurements
-	 * @param sourceBitrate The bitrate of the source file in bits per second
+	 * @param sourceBitrate The bitrate of the video stream of the source file in bits per second
 	 * @return The bitrate in bits per second
 	 */
 	@JvmStatic
 	fun getStreamBitrateLimit(context: Context, sourceBitrate: Int?): Int {
-		val limit = getStreamBitrateLimit(context)
-		if (sourceBitrate == null || sourceBitrate <= limit) return limit
+		val ceiling = getStreamBitrateLimit(context)
+		if (sourceBitrate == null || sourceBitrate <= 0) return ceiling
 
-		// The device has to keep up with the stream, otherwise the buffer runs dry
-		// and the playback stutters. The capability is the highest download rate
-		// that was ever reached, so it is the best evidence of what the device
-		// is able to sustain.
-		if (getMediaCapability(context) < sourceBitrate) return limit
+		// The server compares the requested video bitrate with the bitrate of the
+		// video stream of the source. The request also has to carry the audio that
+		// is transcoded along with the video, so the bitrate of the audio is added
+		// to the bitrate of the source. Without it the video bitrate that reaches
+		// the server stays below the bitrate of the source and the server scales
+		// the video down to the next step of its resolution ladder.
+		val required = sourceBitrate + AUDIO_HEADROOM
 
-		// The connection has to carry the stream between two segments.
-		val linkSafe = getLinkSafeBitrate(context)
-		if (linkSafe > 0 && linkSafe < sourceBitrate) return limit
+		// The connection cannot carry the bitrate of the source, so the video has to
+		// be scaled down. The limit of the connection is requested instead and the
+		// server picks the resolution that fits.
+		if (ceiling < required) return ceiling
 
-		return sourceBitrate
+		return required
 	}
 
 	/**
 	 * The upper bound of the bitrate that may be requested from the server.
 	 *
-	 * Two independent measurements are combined:
-	 *   - the throughput of the media downloads, which is what the device managed
-	 *     to pull while it was decoding a stream
-	 *   - the throughput of the connection, measured without decoding anything
+	 * The measurement of the connection is the limit. The throughput of the media
+	 * downloads cannot be used for this: a stream is downloaded at the speed it is
+	 * played back, so the measurement reports the bitrate of the stream that was
+	 * requested and never the capability of the device. Using it as the limit
+	 * would keep every following request at the bitrate of the first stream and
+	 * the server would scale every following stream down.
 	 *
-	 * The smaller of the two is the limit. When the connection is the bottleneck
-	 * the media download cannot be faster than the connection, and when the device
-	 * is the bottleneck the connection may be a lot faster than the media download.
+	 * The connection is measured without decoding anything, so it reports what the
+	 * network is able to deliver. The margin compensates for the traffic that
+	 * competes with the stream and for the time between two segments.
 	 *
 	 * @return The bitrate in bits per second or 0 when nothing is known yet
 	 */
 	@JvmStatic
 	fun getStreamBitrateLimit(context: Context): Int {
-		val media = getAverageBitrate(context)
 		val link = getLinkBitrate(context)
-
-		val mediaLimit = if (media > 0) {
-			(media * USABLE_FRACTION).toInt().coerceAtLeast(MIN_BITRATE)
-		} else {
-			0
-		}
-		val linkLimit = if (link > 0) {
-			(link * USABLE_FRACTION).toInt().coerceAtLeast(MIN_BITRATE)
-		} else {
-			0
+		if (link > 0) {
+			return (link * USABLE_FRACTION).toInt().coerceAtLeast(MIN_BITRATE)
 		}
 
-		return when {
-			mediaLimit > 0 && linkLimit > 0 -> minOf(mediaLimit, linkLimit)
-			mediaLimit > 0 -> mediaLimit
-			else -> linkLimit
+		// Without a measurement of the connection the throughput of the media
+		// downloads is the only evidence that is left.
+		val media = getAverageBitrate(context)
+		if (media > 0) {
+			return (media * USABLE_FRACTION).toInt().coerceAtLeast(MIN_BITRATE)
 		}
+
+		return 0
 	}
 
 	/**

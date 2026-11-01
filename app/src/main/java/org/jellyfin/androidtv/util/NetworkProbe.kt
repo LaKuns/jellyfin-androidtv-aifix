@@ -48,6 +48,11 @@ object NetworkProbe {
 	/** Measurements below this size are not meaningful. */
 	private const val MIN_PROBE_BYTES = 1024L * 1024
 
+	/**
+	 * A connection that is at least this fast does not need a second attempt.
+	 */
+	private const val ACCEPTABLE_PROBE_BITRATE = 20_000_000L
+
 	private var probed = false
 
 	/**
@@ -122,12 +127,27 @@ object NetworkProbe {
 	 * Downloads a chunk of the item and measures how long it took.
 	 */
 	private fun download(api: ApiClient, token: String, itemId: String): LinkMeasurement? {
+		// The server may be busy when the measurement starts, which makes the first
+		// attempt slow. The better of two attempts is the better estimate of the
+		// connection.
+		var best: LinkMeasurement? = null
+
 		for (path in listOf("/Videos/$itemId/stream", "/Audio/$itemId/stream")) {
 			val url = buildUrl(api, "$path?static=true")
-			val result = downloadChunk(url, token) ?: continue
 
-			Timber.i("Network probe: %d bps, %d ms latency", result.bitrate, result.latencyMs)
-			return result
+			for (attempt in 0 until 2) {
+				val result = downloadChunk(url, token) ?: continue
+
+				Timber.i("Network probe: %d bps, %d ms latency", result.bitrate, result.latencyMs)
+
+				if (best == null || result.bitrate > best.bitrate) {
+					best = result
+				}
+
+				if (best.bitrate >= ACCEPTABLE_PROBE_BITRATE) break
+			}
+
+			if (best != null) return best
 		}
 
 		return null
@@ -148,6 +168,14 @@ object NetworkProbe {
 
 		try {
 			connection.inputStream.use { stream ->
+				// The round trip time of the connection: the time until the first
+				// byte of the answer arrives. Everything the player has to wait for
+				// before a segment starts is this delay.
+				val first = stream.read(buffer)
+				if (first <= 0) return null
+				latencyMs = SystemClock.elapsedRealtime() - requestStart
+				read += first
+
 				// Warm up: the first bytes are slow and would distort the measurement.
 				while (read < WARMUP_SIZE) {
 					val count = stream.read(buffer)
@@ -157,9 +185,6 @@ object NetworkProbe {
 
 				if (read < WARMUP_SIZE) return null
 
-				// The round trip time of the connection: everything the player has to wait
-				// for before the first byte of a request arrives.
-				latencyMs = SystemClock.elapsedRealtime() - requestStart
 				val start = SystemClock.elapsedRealtime()
 				val measured = read
 				while (read < WARMUP_SIZE + PROBE_SIZE) {

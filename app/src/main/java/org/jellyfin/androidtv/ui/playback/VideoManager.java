@@ -318,8 +318,13 @@ public class VideoManager {
             // network jitter without holding tens of megabytes of compressed video.
             // The rebuffer threshold is generous so a single hiccup does not show the
             // buffering spinner.
+            // The player starts as soon as it has the start buffer of the stream. A fast
+            // connection delivers the first seconds quickly, so the picture appears
+            // sooner without risking a stall right at the beginning.
+            long linkBitrate = PlaybackThroughput.getLinkSafeBitrate(context);
+            int startBufferMs = linkBitrate >= PerformanceProfile.FAST_CONNECTION_BITRATE ? 1_500 : 2_500;
             loadControl = new DefaultLoadControl.Builder()
-                    .setBufferDurationsMs(15_000, 30_000, 2_500, 5_000)
+                    .setBufferDurationsMs(15_000, 30_000, startBufferMs, 5_000)
                     .setBackBuffer(0, false)
                     .setPrioritizeTimeOverSizeThresholds(true)
                     .build();

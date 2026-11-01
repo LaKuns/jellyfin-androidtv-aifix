@@ -21,6 +21,7 @@ import org.jellyfin.androidtv.util.AndroidVersion
 import org.jellyfin.androidtv.util.PerformanceProfile
 import org.jellyfin.androidtv.util.profile.createDeviceProfile
 import org.jellyfin.playback.core.playbackManager
+import org.jellyfin.playback.core.support.PlaybackThroughput
 import org.jellyfin.playback.jellyfin.jellyfinPlugin
 import org.jellyfin.playback.media3.exoplayer.ExoPlayerOptions
 import org.jellyfin.playback.media3.exoplayer.exoPlayerPlugin
@@ -75,6 +76,16 @@ fun Scope.createPlaybackManager() = playbackManager(androidContext()) {
 	val userPreferences = get<UserPreferences>()
 	val lowPerformanceDevice = PerformanceProfile.isLowPerformanceDevice(androidContext())
 	val bufferLength = userPreferences[UserPreferences.bufferLength]
+	// The player starts as soon as it has the start buffer of the stream. A fast
+	// connection delivers the first seconds quickly, so the picture appears sooner
+	// without risking a stall right at the beginning.
+	val linkBitrate = PlaybackThroughput.getLinkSafeBitrate(androidContext())
+	val startBufferDuration = if (linkBitrate >= PerformanceProfile.FAST_CONNECTION_BITRATE) {
+		1.5.seconds
+	} else {
+		2.5.seconds
+	}
+
 	val exoPlayerOptions = ExoPlayerOptions(
 		preferFfmpeg = userPreferences[UserPreferences.preferExoPlayerFfmpeg],
 		enableLibass = userPreferences[UserPreferences.assDirectPlay],
@@ -86,7 +97,7 @@ fun Scope.createPlaybackManager() = playbackManager(androidContext()) {
 		baseDataSourceFactory = get<HttpDataSource.Factory>(),
 		minBufferDuration = if (lowPerformanceDevice) 15.seconds else bufferLength.minBufferDuration,
 		maxBufferDuration = if (lowPerformanceDevice) 30.seconds else bufferLength.maxBufferDuration,
-		bufferForPlaybackDuration = if (lowPerformanceDevice) 2.5.seconds else bufferLength.bufferForPlaybackDuration,
+		bufferForPlaybackDuration = if (lowPerformanceDevice) startBufferDuration else bufferLength.bufferForPlaybackDuration,
 		bufferForPlaybackAfterRebufferDuration = if (lowPerformanceDevice) 5.seconds else bufferLength.bufferForPlaybackAfterRebufferDuration,
 	)
 	install(exoPlayerPlugin(get(), exoPlayerOptions))

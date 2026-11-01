@@ -69,6 +69,26 @@ object PerformanceProfile {
 	 */
 	const val LOW_PERFORMANCE_DEFAULT_VIDEO_BITRATE = 5_000_000
 
+	/**
+	 * Bitrate the connection has to be able to carry before the player starts with a
+	 * short buffer.
+	 *
+	 * The player waits for a couple of seconds of the stream before it shows the
+	 * first frame. A fast connection delivers them quickly, a slow one has to wait
+	 * for them, so the start is quicker when the connection is fast.
+	 */
+	const val FAST_CONNECTION_BITRATE = 12_000_000L
+
+	/**
+	 * Bitrate that is reserved for the audio that is transcoded along with the video.
+	 *
+	 * The server takes the requested bitrate, subtracts the bitrate of the audio and
+	 * compares the remainder with the bitrate of the video stream of the source. A
+	 * request that does not carry the audio therefore ends up below the bitrate of
+	 * the source and the server scales the video down.
+	 */
+	const val AUDIO_BITRATE_RESERVE = 1_000_000
+
 	@JvmStatic
 	fun isLowPerformanceDevice(context: Context): Boolean {
 		// Reading the preference first is required so an explicit user choice always wins,

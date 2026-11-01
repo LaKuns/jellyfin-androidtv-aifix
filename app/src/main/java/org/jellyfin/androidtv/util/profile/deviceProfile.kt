@@ -123,21 +123,22 @@ fun createDeviceProfile(
 	val hardwareAudioChannels = mediaTest.getMaxHardwareAudioChannels()
 	val downMixByDevice = lowPerformanceDevice && hardwareAudioChannels < 3 && !isAudioBehaviorSet(context)
 
-	// The requested bitrate is limited by what the device was actually able to download.
-	// A stream that cannot be fetched as fast as it is consumed empties the buffer and
+	// The requested bitrate is limited by what the connection is able to carry. A
+	// stream that cannot be fetched as fast as it is consumed empties the buffer and
 	// makes the playback stutter every few seconds, no matter how fast the server
 	// transcodes it.
 	//
-	// The limit is based on the throughput of the media downloads and on the throughput
-	// of the connection measured without decoding. The connection alone must never
-	// raise the limit: a fast connection says nothing about how fast the device pulls
-	// a stream while it decodes it.
+	// The limit is based on the throughput of the connection, which is measured
+	// without decoding anything. The throughput of the media downloads is not used
+	// for this: a stream is downloaded at the speed it is played back, so that
+	// measurement reports the bitrate of the stream that was requested and never the
+	// capability of the connection. It would lower the request of every following
+	// stream to the bitrate of the first one.
 	//
 	// The bitrate of the source file is taken into account as well: the server scales
 	// a transcoded stream down when it is asked for less than the bitrate of the
 	// source, which costs the resolution of the original.
 	val throughputLimit = PlaybackThroughput.getStreamBitrateLimit(context, sourceBitrate)
-	val mediaMeasured = PlaybackThroughput.hasMediaMeasurement(context)
 
 	createDeviceProfile(
 		mediaTest = mediaTest,
@@ -149,12 +150,17 @@ fun createDeviceProfile(
 			}
 
 			when {
-				// The measured throughput is the best estimate of what the device can
-				// sustain, and it may also raise the limit again on a fast connection.
-				mediaMeasured && throughputLimit > 0 -> minOf(deviceLimit, throughputLimit)
-				// Without a media measurement only the connection is known. It may lower
-				// the limit, but it never raises it.
-				!mediaMeasured && throughputLimit in 1 until deviceLimit -> throughputLimit
+				// The connection was measured, so its throughput is the limit. The limit
+				// already covers the bitrate of the source when the connection is able
+				// to carry it.
+				throughputLimit > 0 -> minOf(deviceLimit, throughputLimit)
+				// Nothing was measured at all. The bitrate of the source is requested
+				// so that the server does not scale the video down, which is the
+				// resolution the file was stored with.
+				sourceBitrate != null -> minOf(
+					deviceLimit,
+					sourceBitrate + PerformanceProfile.AUDIO_BITRATE_RESERVE,
+				)
 				// Without any measurement a conservative value is used, TV boxes are
 				// usually limited by their wifi connection.
 				lowPerformanceDevice -> minOf(
