@@ -43,7 +43,13 @@ object NetworkProbe {
 	 */
 	private const val BUFFER_SIZE = 512 * 1024
 
-	private const val TIMEOUT_MS = 20_000
+	/**
+	 * Timeout of the requests of the measurement.
+	 *
+	 * The timeout applies to a single read and not to the whole transfer: a slow
+	 * connection still delivers its data, it only needs more time for it.
+	 */
+	private const val TIMEOUT_MS = 10_000
 
 	/** Measurements below this size are not meaningful. */
 	private const val MIN_PROBE_BYTES = 1024L * 1024
@@ -52,20 +58,6 @@ object NetworkProbe {
 	 * A connection that is at least this fast does not need a second attempt.
 	 */
 	private const val ACCEPTABLE_PROBE_BITRATE = 20_000_000L
-
-	private var probed = false
-
-	/**
-	 * Runs the measurement once per app start.
-	 *
-	 * @return The measurement or null when it failed
-	 */
-	suspend fun measureOnce(api: ApiClient): LinkMeasurement? {
-		if (probed) return null
-		probed = true
-
-		return measure(api)
-	}
 
 	/**
 	 * Runs the measurement.

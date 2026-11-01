@@ -289,6 +289,22 @@ fun createDeviceProfileReport(
 			if (linkBitrate > 0) {
 				appendValue("${linkBitrate / 1_000_000} Mbps")
 			} else {
+				appendValue("not measured on this connection")
+			}
+		}
+		appendItem("Connection in use") {
+			val active = PlaybackThroughput.getActiveNetwork(context)
+			if (active.isNotEmpty()) {
+				appendValue(active)
+			} else {
+				appendValue("unknown")
+			}
+		}
+		appendItem("Connection the speed was measured on") {
+			val measured = PlaybackThroughput.getLinkNetwork(context)
+			if (measured.isNotEmpty()) {
+				appendValue(measured)
+			} else {
 				appendValue("not measured yet")
 			}
 		}

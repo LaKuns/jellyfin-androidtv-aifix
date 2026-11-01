@@ -1,11 +1,6 @@
 package org.jellyfin.androidtv.ui.browsing
 
 import android.content.Intent
-import android.net.ConnectivityManager
-import android.net.Network
-import android.net.NetworkCapabilities
-import android.net.NetworkRequest
-import android.os.Build
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.View
@@ -22,6 +17,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import org.jellyfin.androidtv.auth.repository.SessionRepository
 import org.jellyfin.androidtv.auth.repository.UserRepository
 import org.jellyfin.androidtv.integration.LeanbackChannelWorker
@@ -35,10 +31,9 @@ import org.jellyfin.androidtv.ui.navigation.NavigationRepository
 import org.jellyfin.androidtv.ui.screensaver.InAppScreensaver
 import org.jellyfin.androidtv.ui.settings.compat.MainActivitySettings
 import org.jellyfin.androidtv.ui.startup.StartupActivity
+import org.jellyfin.androidtv.util.ConnectionMonitor
 import org.jellyfin.androidtv.util.applyTheme
-import org.jellyfin.androidtv.util.NetworkProbe
 import org.jellyfin.androidtv.util.profile.DeviceProfileReporter
-import org.jellyfin.playback.core.support.PlaybackThroughput
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.model.ServerVersion
 import org.koin.android.ext.android.inject
@@ -55,52 +50,6 @@ class MainActivity : FragmentActivity() {
 	private val userPreferences by inject<UserPreferences>()
 	private val serverVersion by inject<ServerVersion>()
 
-	/**
-	 * Measures the speed and the latency of the connection and stores the result.
-	 */
-	private suspend fun measureConnection() {
-		val measurement = NetworkProbe.measureOnce(api) ?: return
-
-		PlaybackThroughput.recordLinkBitrate(this@MainActivity, measurement.bitrate)
-		PlaybackThroughput.recordLinkLatency(this@MainActivity, measurement.latencyMs)
-	}
-
-	/**
-	 * Measures the connection again whenever it changes.
-	 *
-	 * A device that is moved from wifi to a cable keeps the measurements of the old
-	 * connection otherwise, and the requested bitrate would stay at the value of the
-	 * slower connection.
-	 */
-	private fun observeNetworkChanges() {
-		val connectivityManager = getSystemService(ConnectivityManager::class.java) ?: return
-
-		// The connection that is already in use was measured when the app started.
-		val initialNetwork = connectivityManager.activeNetwork
-
-		val callback = object : ConnectivityManager.NetworkCallback() {
-			override fun onAvailable(network: Network) {
-				if (network == initialNetwork) return
-
-				lifecycleScope.launch {
-					val measurement = NetworkProbe.measure(api) ?: return@launch
-
-					PlaybackThroughput.recordLinkBitrate(this@MainActivity, measurement.bitrate)
-					PlaybackThroughput.recordLinkLatency(this@MainActivity, measurement.latencyMs)
-				}
-			}
-		}
-
-		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-			connectivityManager.registerDefaultNetworkCallback(callback)
-		} else {
-			val request = NetworkRequest.Builder()
-				.addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-				.build()
-			connectivityManager.registerNetworkCallback(request, callback)
-		}
-	}
-
 	override fun onCreate(savedInstanceState: Bundle?) {
 		applyTheme()
 
@@ -108,20 +57,23 @@ class MainActivity : FragmentActivity() {
 
 		if (!validateAuthentication()) return
 
+		// The measurements belong to the connection they were taken on. When the device
+		// switches between wifi and a cable the old values are meaningless, so they are
+		// taken again as soon as the new connection is available. The monitor lives in
+		// the process, so the connection is measured even when it changes while the
+		// application is in the background.
+		val measurement = ConnectionMonitor.start(this, api)
+
 		// Send the capabilities of this device to the server so the device profile and the
 		// decoder list can be inspected from the server log.
 		lifecycleScope.launch {
-			// Measure the speed of the connection without decoding anything, so a slow
-			// playback can be attributed to the network or to the device itself.
-			measureConnection()
+			// Wait for the measurement of the connection, the report contains the
+			// bitrate that is requested from the server. The measurement is not
+			// allowed to hold the report back forever.
+			withTimeoutOrNull(REPORT_DELAY_MS) { measurement.join() }
 
 			DeviceProfileReporter.reportOnce(this@MainActivity, api, userPreferences, serverVersion)
 		}
-
-		// The measurements belong to the connection they were taken on. When the device
-		// switches between wifi and a cable the old values are meaningless, so they are
-		// taken again as soon as the new connection is available.
-		observeNetworkChanges()
 
 		interactionTrackerViewModel.keepScreenOn.flowWithLifecycle(lifecycle, Lifecycle.State.RESUMED)
 			.onEach { keepScreenOn ->
@@ -210,4 +162,11 @@ class MainActivity : FragmentActivity() {
 
 	override fun onKeyLongPress(keyCode: Int, event: KeyEvent?): Boolean =
 		onKeyEvent(keyCode, event) || super.onKeyUp(keyCode, event)
+
+	companion object {
+		/**
+		 * Time the report waits for the measurement of the connection.
+		 */
+		private const val REPORT_DELAY_MS = 60_000L
+	}
 }

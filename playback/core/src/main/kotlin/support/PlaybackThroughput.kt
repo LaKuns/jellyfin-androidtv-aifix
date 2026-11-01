@@ -22,6 +22,9 @@ object PlaybackThroughput {
 	private const val KEY_CAPABILITY = "capability_bps"
 	private const val KEY_LINK = "link_bps"
 	private const val KEY_LINK_LATENCY = "link_latency_ms"
+	private const val KEY_LINK_NETWORK = "link_network"
+	private const val KEY_LINK_TIME = "link_time"
+	private const val KEY_ACTIVE_NETWORK = "active_network"
 
 	/** Length of a HLS segment in seconds. */
 	private const val SEGMENT_SECONDS = 3.0
@@ -270,13 +273,9 @@ object PlaybackThroughput {
 			return (link * USABLE_FRACTION).toInt().coerceAtLeast(MIN_BITRATE)
 		}
 
-		// Without a measurement of the connection the throughput of the media
-		// downloads is the only evidence that is left.
-		val media = getAverageBitrate(context)
-		if (media > 0) {
-			return (media * USABLE_FRACTION).toInt().coerceAtLeast(MIN_BITRATE)
-		}
-
+		// The connection is unknown: it was never measured, or it was measured on
+		// another connection. A limit that is based on the media downloads would be
+		// wrong in both cases, so the request is not limited by the throughput.
 		return 0
 	}
 
@@ -293,12 +292,70 @@ object PlaybackThroughput {
 	 *
 	 * A slow connection can lower the requested bitrate, a fast one proves that a
 	 * stuttering playback is caused by the device itself.
+	 *
+	 * The measurement belongs to the connection it was taken on. The identity of
+	 * that connection is stored with it, so that the measurement can be ignored
+	 * as soon as the device uses another connection.
+	 *
+	 * @param context Used to persist the measurement
+	 * @param bitsPerSecond The measured throughput in bits per second
+	 * @param networkId The identity of the connection the measurement was taken on
 	 */
 	@JvmStatic
-	fun recordLinkBitrate(context: Context, bitsPerSecond: Long) {
+	fun recordLinkBitrate(context: Context, bitsPerSecond: Long, networkId: String) {
 		context.applicationContext.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
 			.edit()
 			.putLong(KEY_LINK, bitsPerSecond)
+			.putString(KEY_LINK_NETWORK, networkId)
+			.putLong(KEY_LINK_TIME, System.currentTimeMillis())
+			.apply()
+	}
+
+	/**
+	 * The time of the last measurement of the connection.
+	 *
+	 * @return The time in milliseconds since the epoch or 0 when nothing was
+	 *         measured yet
+	 */
+	@JvmStatic
+	fun getLinkTime(context: Context): Long =
+		context.applicationContext.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+			.getLong(KEY_LINK_TIME, 0)
+
+	/**
+	 * The identity of the connection the measurements belong to.
+	 *
+	 * @return The identity or an empty string when nothing was measured yet
+	 */
+	@JvmStatic
+	fun getLinkNetwork(context: Context): String =
+		context.applicationContext.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+			.getString(KEY_LINK_NETWORK, "") ?: ""
+
+	/**
+	 * The identity of the connection that is currently used.
+	 *
+	 * @return The identity or an empty string when it is unknown
+	 */
+	@JvmStatic
+	fun getActiveNetwork(context: Context): String =
+		context.applicationContext.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+			.getString(KEY_ACTIVE_NETWORK, "") ?: ""
+
+	/**
+	 * Stores the identity of the connection that is currently used.
+	 *
+	 * The measurements of another connection are worthless as soon as the device
+	 * uses a different one, so the connection that is in use is stored with them.
+	 *
+	 * @param context Used to persist the identity
+	 * @param networkId The identity of the connection that is currently used
+	 */
+	@JvmStatic
+	fun setActiveNetwork(context: Context, networkId: String) {
+		context.applicationContext.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+			.edit()
+			.putString(KEY_ACTIVE_NETWORK, networkId)
 			.apply()
 	}
 
@@ -326,9 +383,29 @@ object PlaybackThroughput {
 
 	/**
 	 * The throughput of the connection, measured without any decoding.
+	 *
+	 * The measurement is only valid for the connection it was taken on. A device
+	 * that switches from wifi to a cable keeps the value of the old connection
+	 * otherwise, and the request would be based on a connection that is not in
+	 * use anymore. A connection that is fast enough to carry the stream would
+	 * then be treated as a slow one and the server would scale the video down.
+	 *
+	 * @return The bitrate in bits per second or 0 when the connection is unknown
+	 *         or was measured on another connection
 	 */
 	@JvmStatic
-	fun getLinkBitrate(context: Context): Long =
-		context.applicationContext.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
-			.getLong(KEY_LINK, 0)
+	fun getLinkBitrate(context: Context): Long {
+		val preferences = context.applicationContext.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+		val measured = preferences.getLong(KEY_LINK, 0)
+		if (measured <= 0) return 0
+
+		val measuredOn = preferences.getString(KEY_LINK_NETWORK, "") ?: ""
+		val active = preferences.getString(KEY_ACTIVE_NETWORK, "") ?: ""
+
+		// A measurement without an identity and a connection without a known
+		// identity cannot be compared, so neither of them is used.
+		if (measuredOn.isEmpty() || active.isEmpty()) return 0
+
+		return if (measuredOn == active) measured else 0
+	}
 }
