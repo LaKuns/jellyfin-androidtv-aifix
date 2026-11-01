@@ -159,7 +159,7 @@ fun createDeviceProfile(
 				// resolution the file was stored with.
 				sourceBitrate != null -> minOf(
 					deviceLimit,
-					sourceBitrate + PerformanceProfile.AUDIO_BITRATE_RESERVE,
+					sourceBitrate + PlaybackThroughput.AUDIO_HEADROOM,
 				)
 				// Without any measurement a conservative value is used, TV boxes are
 				// usually limited by their wifi connection.

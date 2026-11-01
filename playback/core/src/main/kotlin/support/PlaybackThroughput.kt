@@ -51,12 +51,36 @@ object PlaybackThroughput {
 	/**
 	 * Bitrate that is reserved for the audio that is transcoded along with the video.
 	 *
-	 * The server takes the requested bitrate, subtracts the bitrate of the audio and
-	 * compares the remainder with the bitrate of the video stream of the source. A
-	 * request that does not carry the audio therefore ends up below the bitrate of
-	 * the source and the video is scaled down.
+	 * The server takes the requested bitrate, subtracts the bitrate of the audio it
+	 * chose and compares the remainder with the bitrate of the video stream of the
+	 * source. A request that does not carry the audio therefore ends up below the
+	 * bitrate of the source and the server scales the video down to the next step of
+	 * its resolution ladder.
+	 *
+	 * The server picks the audio bitrate itself. The largest value it was observed to
+	 * choose is 640000, so that amount has to be reserved to be sure that the video
+	 * keeps the resolution of the source. A little more is added on top of it, so
+	 * that the request also survives a server that picks a larger audio bitrate
+	 * than the one that was observed.
 	 */
-	private const val AUDIO_HEADROOM = 1_000_000
+	const val AUDIO_HEADROOM = 768_000
+
+	/**
+	 * Fraction of the measured connection that a request may use when it keeps the
+	 * resolution of the source.
+	 *
+	 * The normal limit of a request is lower than the connection, because the
+	 * margin is needed for the traffic that competes with the stream and for the
+	 * time between two segments. A request that keeps the resolution of the source
+	 * is higher than that limit, but the connection is still able to carry it: the
+	 * surplus of the connection over the stream fills the buffer, and a stream that
+	 * is scaled down by the server stays that way for the whole film.
+	 *
+	 * When the connection is not able to carry the bitrate of the source at all,
+	 * the request falls back to the normal limit and the server picks the
+	 * resolution that fits. A stuttering picture is worse than a smaller one.
+	 */
+	private const val RESOLUTION_FRACTION = 0.9
 
 	/** Lower bound of the request, playback should never degrade into an unusable bitrate. */
 	private const val MIN_BITRATE = 2_000_000
@@ -164,6 +188,19 @@ object PlaybackThroughput {
 	}
 
 	/**
+	 * The bitrate a request may use when it keeps the resolution of the source.
+	 *
+	 * @return The bitrate in bits per second or 0 when the connection is unknown
+	 */
+	@JvmStatic
+	fun getResolutionAllowance(context: Context): Long {
+		val link = getLinkBitrate(context)
+		if (link <= 0) return 0
+
+		return (link * RESOLUTION_FRACTION).toLong()
+	}
+
+	/**
 	 * The upper bound of the bitrate that may be requested from the server.
 	 *
 	 * A transcoded stream is scaled down by the server when the requested bitrate is
@@ -189,12 +226,25 @@ object PlaybackThroughput {
 		// the video down to the next step of its resolution ladder.
 		val required = sourceBitrate + AUDIO_HEADROOM
 
-		// The connection cannot carry the bitrate of the source, so the video has to
-		// be scaled down. The limit of the connection is requested instead and the
-		// server picks the resolution that fits.
-		if (ceiling < required) return ceiling
+		// The connection carries the bitrate of the source, so the resolution of
+		// the source is requested.
+		if (ceiling >= required) return required
 
-		return required
+		// The connection is slower than the bitrate of the source. The resolution
+		// is still kept when the connection comes close enough to it: the surplus
+		// of the connection over the stream fills the buffer, and a stream that
+		// the server scaled down stays that way for the whole film.
+		val link = getLinkBitrate(context)
+		if (link > 0) {
+			val allowance = (link * RESOLUTION_FRACTION).toInt()
+			if (required <= allowance) return required
+		}
+
+		// The connection cannot carry the bitrate of the source at all. The limit
+		// of the connection is requested and the server scales the video down to
+		// the resolution that fits. A stuttering picture is worse than a smaller
+		// one.
+		return ceiling
 	}
 
 	/**

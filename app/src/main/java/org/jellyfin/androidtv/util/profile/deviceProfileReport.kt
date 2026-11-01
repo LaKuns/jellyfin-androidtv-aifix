@@ -285,7 +285,7 @@ fun createDeviceProfileReport(
 		val lastMeasured = PlaybackThroughput.getLastMeasuredBitrate(context)
 		val limit = PlaybackThroughput.getStreamBitrateLimit(context)
 
-		appendItem("Connection speed (no decoding)") {
+		appendItem("Connection speed (sustained, no decoding)") {
 			if (linkBitrate > 0) {
 				appendValue("${linkBitrate / 1_000_000} Mbps")
 			} else {
@@ -300,21 +300,21 @@ fun createDeviceProfileReport(
 				appendValue("not measured yet")
 			}
 		}
-		appendItem("Average download throughput") {
+		appendItem("Average segment rate (burst)") {
 			if (averageMeasured > 0) {
 				appendValue("${averageMeasured / 1_000_000} Mbps")
 			} else {
 				appendValue("not measured yet")
 			}
 		}
-		appendItem("Last measured download throughput") {
+		appendItem("Last segment rate (burst)") {
 			if (lastMeasured > 0) {
 				appendValue("${lastMeasured / 1_000_000} Mbps")
 			} else {
 				appendValue("not measured yet")
 			}
 		}
-		appendItem("Highest download rate reached") {
+		appendItem("Highest segment rate (burst)") {
 			val capability = PlaybackThroughput.getMediaCapability(context)
 			if (capability > 0) {
 				appendValue("${capability / 1_000_000} Mbps")
@@ -335,6 +335,14 @@ fun createDeviceProfileReport(
 				appendValue("${limit / 1_000_000} Mbps")
 			} else {
 				appendValue("not limited by throughput")
+			}
+		}
+		appendItem("Bitrate allowed for the source resolution") {
+			val allowance = PlaybackThroughput.getResolutionAllowance(context)
+			if (allowance > 0) {
+				appendValue("${allowance / 1_000_000} Mbps")
+			} else {
+				appendValue("not measured yet")
 			}
 		}
 		appendItem("Bottleneck") {
