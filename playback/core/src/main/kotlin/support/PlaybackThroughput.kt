@@ -19,8 +19,15 @@ object PlaybackThroughput {
 	private const val PREFERENCES_NAME = "playback_throughput"
 	private const val KEY_AVERAGE = "average_bps"
 	private const val KEY_LAST = "last_bps"
+	private const val KEY_CAPABILITY = "capability_bps"
 	private const val KEY_LINK = "link_bps"
 	private const val KEY_LINK_LATENCY = "link_latency_ms"
+
+	/** Length of a HLS segment in seconds. */
+	private const val SEGMENT_SECONDS = 3.0
+
+	/** Safety factor of the bitrate the connection is able to carry. */
+	private const val LINK_SAFETY_FACTOR = 0.9
 
 	/** Number of downloads that are averaged. */
 	private const val WINDOW_SIZE = 8
@@ -90,10 +97,13 @@ object PlaybackThroughput {
 
 		val average = samples.sum() / samples.size
 
-		context.applicationContext.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
-			.edit()
+		val preferences = context.applicationContext.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+		val capability = maxOf(preferences.getLong(KEY_CAPABILITY, 0), bitsPerSecond)
+
+		preferences.edit()
 			.putLong(KEY_AVERAGE, average)
 			.putLong(KEY_LAST, bitsPerSecond)
+			.putLong(KEY_CAPABILITY, capability)
 			.apply()
 
 		Timber.i("Measured download throughput %d bps (average %d bps)", bitsPerSecond, average)
@@ -118,6 +128,69 @@ object PlaybackThroughput {
 	 */
 	@JvmStatic
 	fun hasMediaMeasurement(context: Context): Boolean = getAverageBitrate(context) > 0
+
+	/**
+	 * The highest download rate the device has achieved so far.
+	 *
+	 * The average of the downloads is not a good measure of the capability of the
+	 * device: when the server delivers the stream slower than the device can read
+	 * it, the download rate is the bitrate of the stream and not the capability of
+	 * the device. The highest rate that was ever reached is the capability.
+	 */
+	@JvmStatic
+	fun getMediaCapability(context: Context): Long =
+		context.applicationContext.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+			.getLong(KEY_CAPABILITY, 0)
+
+	/**
+	 * The bitrate the connection is able to carry without the buffer running dry.
+	 *
+	 * The player downloads the segments of a stream one after the other, so a segment
+	 * has to be downloaded faster than it is played back. The time that is left for
+	 * the download is the length of a segment minus the round trip time of the
+	 * connection.
+	 *
+	 * @return The bitrate in bits per second or 0 when the connection is unknown
+	 */
+	@JvmStatic
+	fun getLinkSafeBitrate(context: Context): Long {
+		val link = getLinkBitrate(context)
+		if (link <= 0) return 0
+
+		val latencySeconds = getLinkLatency(context) / 1000.0
+		val usableFraction = ((SEGMENT_SECONDS - latencySeconds) / SEGMENT_SECONDS).coerceIn(0.1, 1.0)
+
+		return (link * usableFraction * LINK_SAFETY_FACTOR).toLong()
+	}
+
+	/**
+	 * The upper bound of the bitrate that may be requested from the server.
+	 *
+	 * A transcoded stream is scaled down by the server when the requested bitrate is
+	 * below the bitrate of the source file, so a limit below the bitrate of the
+	 * source costs the resolution of the original. The bitrate of the source is
+	 * therefore requested when the device kept up with everything it downloaded so
+	 * far and the connection is able to carry it.
+	 *
+	 * @param context Used to read the measurements
+	 * @param sourceBitrate The bitrate of the source file in bits per second
+	 * @return The bitrate in bits per second
+	 */
+	@JvmStatic
+	fun getStreamBitrateLimit(context: Context, sourceBitrate: Int?): Int {
+		val limit = getStreamBitrateLimit(context)
+		if (sourceBitrate == null || sourceBitrate <= limit) return limit
+
+		// The device has to keep up with the stream, otherwise the buffer runs dry
+		// and the playback stutters.
+		if (getMediaCapability(context) < limit) return limit
+
+		// The connection has to carry the stream between two segments.
+		val linkSafe = getLinkSafeBitrate(context)
+		if (linkSafe > 0 && linkSafe < sourceBitrate) return limit
+
+		return sourceBitrate
+	}
 
 	/**
 	 * The upper bound of the bitrate that may be requested from the server.

@@ -583,10 +583,31 @@ public class PlaybackController implements PlaybackControllerNotifiable {
         DeviceProfile internalProfile = DeviceProfileKt.createDeviceProfile(
                 mFragment.getContext(),
                 userPreferences.getValue(),
-                get(ServerVersion.class)
+                get(ServerVersion.class),
+                getSourceVideoBitrate(currentMediaSource)
         );
         internalOptions.setProfile(internalProfile);
         return internalOptions;
+    }
+
+    /**
+     * The bitrate of the video stream of the source file.
+     *
+     * The server scales a transcoded stream down when it is asked for a bitrate below
+     * the bitrate of the source file, so the bitrate of the source is needed to keep
+     * the resolution of the original.
+     */
+    @Nullable
+    private Integer getSourceVideoBitrate(@Nullable MediaSourceInfo mediaSource) {
+        if (mediaSource == null || mediaSource.getMediaStreams() == null) return null;
+
+        for (MediaStream stream : mediaSource.getMediaStreams()) {
+            if (stream.getType() == MediaStreamType.VIDEO && stream.getBitRate() != null) {
+                return stream.getBitRate();
+            }
+        }
+
+        return null;
     }
 
     private boolean shouldPreferServerTranscoding(@Nullable MediaSourceInfo mediaSource) {

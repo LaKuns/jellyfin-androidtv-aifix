@@ -105,10 +105,12 @@ private fun isAudioBehaviorSet(context: Context): Boolean =
 
 private const val AUDIO_BEHAVIOR_KEY = "audio_behavior"
 
+@JvmOverloads
 fun createDeviceProfile(
 	context: Context,
 	userPreferences: UserPreferences,
 	serverVersion: ServerVersion,
+	sourceBitrate: Int? = null,
 ) = PerformanceProfile.isLowPerformanceDevice(context).let { lowPerformanceDevice ->
 	val mediaTest = MediaCodecCapabilitiesTest(
 		userPreferences[UserPreferences.softwareCodecsEnabled] && !lowPerformanceDevice
@@ -130,7 +132,11 @@ fun createDeviceProfile(
 	// of the connection measured without decoding. The connection alone must never
 	// raise the limit: a fast connection says nothing about how fast the device pulls
 	// a stream while it decodes it.
-	val throughputLimit = PlaybackThroughput.getStreamBitrateLimit(context)
+	//
+	// The bitrate of the source file is taken into account as well: the server scales
+	// a transcoded stream down when it is asked for less than the bitrate of the
+	// source, which costs the resolution of the original.
+	val throughputLimit = PlaybackThroughput.getStreamBitrateLimit(context, sourceBitrate)
 	val mediaMeasured = PlaybackThroughput.hasMediaMeasurement(context)
 
 	createDeviceProfile(
