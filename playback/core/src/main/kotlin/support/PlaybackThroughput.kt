@@ -182,8 +182,10 @@ object PlaybackThroughput {
 		if (sourceBitrate == null || sourceBitrate <= limit) return limit
 
 		// The device has to keep up with the stream, otherwise the buffer runs dry
-		// and the playback stutters.
-		if (getMediaCapability(context) < limit) return limit
+		// and the playback stutters. The capability is the highest download rate
+		// that was ever reached, so it is the best evidence of what the device
+		// is able to sustain.
+		if (getMediaCapability(context) < sourceBitrate) return limit
 
 		// The connection has to carry the stream between two segments.
 		val linkSafe = getLinkSafeBitrate(context)
