@@ -24,8 +24,15 @@ object PlaybackThroughput {
 	/** Number of downloads that are averaged. */
 	private const val WINDOW_SIZE = 8
 
-	/** Part of the measured throughput that is requested from the server. */
-	private const val USABLE_FRACTION = 0.6
+	/**
+	 * Part of the measured throughput that is requested from the server.
+	 *
+	 * The measurement already contains everything that slows the download down,
+	 * including the time the server needs to produce a segment and the cpu time
+	 * the decoder takes from the loader. Only a small margin is needed to keep
+	 * the buffer growing.
+	 */
+	private const val USABLE_FRACTION = 0.85
 
 	/** Lower bound of the request, playback should never degrade into an unusable bitrate. */
 	private const val MIN_BITRATE = 2_000_000
@@ -76,16 +83,60 @@ object PlaybackThroughput {
 	}
 
 	/**
-	 * The bitrate that can be requested from the server without starving the buffer.
+	 * The average throughput of the media downloads.
 	 *
-	 * @return The bitrate in bits per second or 0 when nothing was measured yet
+	 * @return The throughput in bits per second or 0 when nothing was measured yet
 	 */
 	@JvmStatic
-	fun getUsableBitrate(context: Context): Int {
-		val average = context.applicationContext.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+	fun getAverageBitrate(context: Context): Long =
+		context.applicationContext.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
 			.getLong(KEY_AVERAGE, 0)
-		if (average <= 0) return 0
-		return (average * USABLE_FRACTION).toInt().coerceAtLeast(MIN_BITRATE)
+
+	/**
+	 * Whether a media download was measured at all.
+	 *
+	 * This matters because the throughput of the connection alone must never raise
+	 * the requested bitrate: a fast connection says nothing about how fast the
+	 * device can pull a media stream while it decodes it.
+	 */
+	@JvmStatic
+	fun hasMediaMeasurement(context: Context): Boolean = getAverageBitrate(context) > 0
+
+	/**
+	 * The upper bound of the bitrate that may be requested from the server.
+	 *
+	 * Two independent measurements are combined:
+	 *   - the throughput of the media downloads, which is what the device managed
+	 *     to pull while it was decoding a stream
+	 *   - the throughput of the connection, measured without decoding anything
+	 *
+	 * The smaller of the two is the limit. When the connection is the bottleneck
+	 * the media download cannot be faster than the connection, and when the device
+	 * is the bottleneck the connection may be a lot faster than the media download.
+	 *
+	 * @return The bitrate in bits per second or 0 when nothing is known yet
+	 */
+	@JvmStatic
+	fun getStreamBitrateLimit(context: Context): Int {
+		val media = getAverageBitrate(context)
+		val link = getLinkBitrate(context)
+
+		val mediaLimit = if (media > 0) {
+			(media * USABLE_FRACTION).toInt().coerceAtLeast(MIN_BITRATE)
+		} else {
+			0
+		}
+		val linkLimit = if (link > 0) {
+			(link * USABLE_FRACTION).toInt().coerceAtLeast(MIN_BITRATE)
+		} else {
+			0
+		}
+
+		return when {
+			mediaLimit > 0 && linkLimit > 0 -> minOf(mediaLimit, linkLimit)
+			mediaLimit > 0 -> mediaLimit
+			else -> linkLimit
+		}
 	}
 
 	/**
@@ -99,8 +150,8 @@ object PlaybackThroughput {
 	/**
 	 * Stores the throughput of the connection, measured without any decoding.
 	 *
-	 * It is only used for diagnostics: it shows whether a slow playback is caused by the
-	 * connection or by the device itself.
+	 * A slow connection can lower the requested bitrate, a fast one proves that a
+	 * stuttering playback is caused by the device itself.
 	 */
 	@JvmStatic
 	fun recordLinkBitrate(context: Context, bitsPerSecond: Long) {

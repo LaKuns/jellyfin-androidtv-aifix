@@ -281,12 +281,20 @@ fun createDeviceProfileReport(
 
 	appendDetails("Network information") {
 		val linkBitrate = PlaybackThroughput.getLinkBitrate(context)
+		val averageMeasured = PlaybackThroughput.getAverageBitrate(context)
 		val lastMeasured = PlaybackThroughput.getLastMeasuredBitrate(context)
-		val usable = PlaybackThroughput.getUsableBitrate(context)
+		val limit = PlaybackThroughput.getStreamBitrateLimit(context)
 
 		appendItem("Connection speed (no decoding)") {
 			if (linkBitrate > 0) {
 				appendValue("${linkBitrate / 1_000_000} Mbps")
+			} else {
+				appendValue("not measured yet")
+			}
+		}
+		appendItem("Average download throughput") {
+			if (averageMeasured > 0) {
+				appendValue("${averageMeasured / 1_000_000} Mbps")
 			} else {
 				appendValue("not measured yet")
 			}
@@ -299,11 +307,20 @@ fun createDeviceProfileReport(
 			}
 		}
 		appendItem("Requested bitrate limit") {
-			if (usable > 0) {
-				appendValue("${usable / 1_000_000} Mbps")
+			if (limit > 0) {
+				appendValue("${limit / 1_000_000} Mbps")
 			} else {
 				appendValue("not limited by throughput")
 			}
+		}
+		appendItem("Bottleneck") {
+			val verdict = when {
+				linkBitrate <= 0 || averageMeasured <= 0 -> "unknown"
+				averageMeasured * 2 < linkBitrate -> "device (the connection is faster)"
+				averageMeasured * 2 > linkBitrate -> "connection"
+				else -> "both are similar"
+			}
+			appendValue(verdict)
 		}
 	}
 

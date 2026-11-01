@@ -125,7 +125,13 @@ fun createDeviceProfile(
 	// A stream that cannot be fetched as fast as it is consumed empties the buffer and
 	// makes the playback stutter every few seconds, no matter how fast the server
 	// transcodes it.
-	val throughputLimit = PlaybackThroughput.getUsableBitrate(context)
+	//
+	// The limit is based on the throughput of the media downloads and on the throughput
+	// of the connection measured without decoding. The connection alone must never
+	// raise the limit: a fast connection says nothing about how fast the device pulls
+	// a stream while it decodes it.
+	val throughputLimit = PlaybackThroughput.getStreamBitrateLimit(context)
+	val mediaMeasured = PlaybackThroughput.hasMediaMeasurement(context)
 
 	createDeviceProfile(
 		mediaTest = mediaTest,
@@ -139,8 +145,11 @@ fun createDeviceProfile(
 			when {
 				// The measured throughput is the best estimate of what the device can
 				// sustain, and it may also raise the limit again on a fast connection.
-				throughputLimit > 0 -> minOf(deviceLimit, throughputLimit)
-				// Without a measurement a conservative value is used, TV boxes are
+				mediaMeasured && throughputLimit > 0 -> minOf(deviceLimit, throughputLimit)
+				// Without a media measurement only the connection is known. It may lower
+				// the limit, but it never raises it.
+				!mediaMeasured && throughputLimit in 1 until deviceLimit -> throughputLimit
+				// Without any measurement a conservative value is used, TV boxes are
 				// usually limited by their wifi connection.
 				lowPerformanceDevice -> minOf(
 					deviceLimit,
