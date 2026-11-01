@@ -132,7 +132,7 @@ public class VideoManager {
         mExoPlayer.addAnalyticsListener(new AnalyticsListener() {
             @Override
             public void onLoadCompleted(@NonNull EventTime eventTime, @NonNull LoadEventInfo loadEventInfo, @NonNull MediaLoadData mediaLoadData) {
-                if (mediaLoadData.getDataType() != C.DATA_TYPE_MEDIA) return;
+                if (mediaLoadData.dataType != C.DATA_TYPE_MEDIA) return;
 
                 PlaybackThroughput.record(mActivity, loadEventInfo.bytesLoaded, loadEventInfo.loadDurationMs);
             }

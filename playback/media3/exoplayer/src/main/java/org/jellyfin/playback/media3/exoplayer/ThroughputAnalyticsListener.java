@@ -33,7 +33,7 @@ public class ThroughputAnalyticsListener implements AnalyticsListener {
 	) {
 		// Only media downloads say something about the speed of the connection, a
 		// manifest or a subtitle is far too small to measure anything.
-		if (mediaLoadData.getDataType() != C.DATA_TYPE_MEDIA) return;
+		if (mediaLoadData.dataType != C.DATA_TYPE_MEDIA) return;
 
 		PlaybackThroughput.record(context, loadEventInfo.bytesLoaded, loadEventInfo.loadDurationMs);
 	}
