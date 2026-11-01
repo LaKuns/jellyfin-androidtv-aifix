@@ -17,8 +17,8 @@ import java.net.URL
  * the decoders for cpu time, so the transfer slows down even when the connection itself
  * is fast. Downloading a plain file therefore measures the connection on its own.
  *
- * The result is only used for diagnostics, it shows whether the connection is the reason
- * for a stuttering playback or the device itself is too slow.
+ * The result is used to tell whether a stuttering playback is caused by the connection
+ * or by the device itself, and a slow connection also lowers the requested bitrate.
  */
 object NetworkProbe {
 	/** Number of bytes that are downloaded for the measurement. */
@@ -40,10 +40,12 @@ object NetworkProbe {
 		if (probed) return null
 		probed = true
 
+		val token = api.accessToken ?: return null
+
 		return withContext(Dispatchers.IO) {
 			runCatching {
-				val itemId = findItem(api) ?: return@runCatching null
-				download(api, itemId)
+				val itemId = findItem(api, token) ?: return@runCatching null
+				download(api, token, itemId)
 			}.onFailure {
 				Timber.w(it, "Network probe failed")
 			}.getOrNull()
@@ -51,22 +53,27 @@ object NetworkProbe {
 	}
 
 	/**
-	 * Builds an url of the server with the access token of this device.
+	 * Builds an url of the server.
 	 */
-	private fun buildUrl(api: ApiClient, path: String): String {
-		val separator = if (path.contains('?')) "&" else "?"
-		return api.createUrl(path, ignorePathParameters = true) +
-			separator + "api_key=" + api.deviceInfo.accessToken
+	private fun buildUrl(api: ApiClient, path: String): String =
+		api.createUrl(path, ignorePathParameters = true)
+
+	/**
+	 * The server only accepts the access token in the authorization header.
+	 */
+	private fun authorize(connection: HttpURLConnection, token: String) {
+		connection.setRequestProperty("Authorization", "MediaBrowser Token=\"$token\"")
 	}
 
 	/**
 	 * The id of any item of the library, its bytes are used for the measurement.
 	 */
-	private fun findItem(api: ApiClient): String? {
+	private fun findItem(api: ApiClient, token: String): String? {
 		val url = buildUrl(api, "/Items/Latest?limit=1")
 		val connection = URL(url).openConnection() as HttpURLConnection
 		connection.connectTimeout = TIMEOUT_MS
 		connection.readTimeout = TIMEOUT_MS
+		authorize(connection, token)
 
 		return try {
 			val text = connection.inputStream.bufferedReader().use { it.readText() }
@@ -86,10 +93,10 @@ object NetworkProbe {
 	/**
 	 * Downloads a chunk of the item and measures how long it took.
 	 */
-	private fun download(api: ApiClient, itemId: String): Long? {
+	private fun download(api: ApiClient, token: String, itemId: String): Long? {
 		for (path in listOf("/Videos/$itemId/stream", "/Audio/$itemId/stream")) {
 			val url = buildUrl(api, "$path?static=true")
-			val result = downloadChunk(url) ?: continue
+			val result = downloadChunk(url, token) ?: continue
 
 			Timber.i("Network probe: %d bps", result)
 			return result
@@ -98,10 +105,11 @@ object NetworkProbe {
 		return null
 	}
 
-	private fun downloadChunk(url: String): Long? {
+	private fun downloadChunk(url: String, token: String): Long? {
 		val connection = URL(url).openConnection() as HttpURLConnection
 		connection.connectTimeout = TIMEOUT_MS
 		connection.readTimeout = TIMEOUT_MS
+		authorize(connection, token)
 		connection.setRequestProperty("Range", "bytes=0-${PROBE_SIZE - 1}")
 
 		var read = 0L
