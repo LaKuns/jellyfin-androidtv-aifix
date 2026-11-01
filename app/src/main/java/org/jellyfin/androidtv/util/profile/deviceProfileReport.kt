@@ -314,6 +314,22 @@ fun createDeviceProfileReport(
 				appendValue("not measured yet")
 			}
 		}
+		appendItem("Highest download rate reached") {
+			val capability = PlaybackThroughput.getMediaCapability(context)
+			if (capability > 0) {
+				appendValue("${capability / 1_000_000} Mbps")
+			} else {
+				appendValue("not measured yet")
+			}
+		}
+		appendItem("Bitrate the connection can carry") {
+			val linkSafe = PlaybackThroughput.getLinkSafeBitrate(context)
+			if (linkSafe > 0) {
+				appendValue("${linkSafe / 1_000_000} Mbps")
+			} else {
+				appendValue("not measured yet")
+			}
+		}
 		appendItem("Requested bitrate limit") {
 			if (limit > 0) {
 				appendValue("${limit / 1_000_000} Mbps")
