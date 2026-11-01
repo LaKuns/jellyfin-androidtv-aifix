@@ -144,6 +144,7 @@ object NetworkProbe {
 		var read = 0L
 		var latencyMs = 0L
 		var elapsed = 0L
+		val requestStart = SystemClock.elapsedRealtime()
 
 		try {
 			connection.inputStream.use { stream ->
@@ -156,7 +157,9 @@ object NetworkProbe {
 
 				if (read < WARMUP_SIZE) return null
 
-				latencyMs = SystemClock.elapsedRealtime()
+				// The round trip time of the connection: everything the player has to wait
+				// for before the first byte of a request arrives.
+				latencyMs = SystemClock.elapsedRealtime() - requestStart
 				val start = SystemClock.elapsedRealtime()
 				val measured = read
 				while (read < WARMUP_SIZE + PROBE_SIZE) {
