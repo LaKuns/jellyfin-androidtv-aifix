@@ -187,6 +187,11 @@ class ServerRepositoryImpl(
 		} catch (err: ApiClientException) {
 			Timber.e(err, "Unable to update server")
 			null
+		} catch (err: Exception) {
+			// A server that cannot be reached is not an error of the application: the
+			// connection of the device may be gone for a moment.
+			Timber.e(err, "Unable to update server")
+			null
 		}
 
 		return (updatedServer ?: server).asServer(id)
@@ -199,6 +204,12 @@ class ServerRepositoryImpl(
 		return try {
 			updateServerInternal(server.id, serverInfo, force) != null
 		} catch (err: ApiClientException) {
+			Timber.e(err, "Unable to update server")
+
+			false
+		} catch (err: Exception) {
+			// A server that cannot be reached is not an error of the application: the
+			// connection of the device may be gone for a moment.
 			Timber.e(err, "Unable to update server")
 
 			false
@@ -257,15 +268,28 @@ class ServerRepositoryImpl(
 	/**
 	 * Try to retrieve the branding options. If the response JSON is invalid it will return a default value.
 	 * This makes sure we can still work with older Jellyfin versions.
+	 *
+	 * A server that cannot be reached is handled the same way. The request is
+	 * repeated every few minutes, and a device that loses its connection in
+	 * between would otherwise crash the application: the exception of the failed
+	 * request is not an [ApiClientException] but a plain [java.net.ConnectException].
 	 */
 	private suspend fun ApiClient.getBrandingOptionsOrDefault() = try {
 		brandingApi.getBrandingOptions().content
 	} catch (exception: InvalidContentException) {
 		Timber.w(exception, "Invalid branding options response, using default value")
-		BrandingOptionsDto(
-			loginDisclaimer = null,
-			customCss = null,
-			splashscreenEnabled = false,
-		)
+		defaultBrandingOptions()
+	} catch (exception: Exception) {
+		Timber.w(exception, "Unable to retrieve branding options, using default value")
+		defaultBrandingOptions()
 	}
+
+	/**
+	 * The branding options of a server that did not answer.
+	 */
+	private fun defaultBrandingOptions() = BrandingOptionsDto(
+		loginDisclaimer = null,
+		customCss = null,
+		splashscreenEnabled = false,
+	)
 }
