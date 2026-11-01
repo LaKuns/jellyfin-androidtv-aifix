@@ -52,6 +52,7 @@ object PlaybackThroughput {
 	 * @param bytesLoaded Number of bytes of the download
 	 * @param loadDurationMs Duration of the download
 	 */
+	@JvmStatic
 	@Synchronized
 	fun record(context: Context, bytesLoaded: Long, loadDurationMs: Long) {
 		if (bytesLoaded < MIN_SAMPLE_BYTES || bytesLoaded > MAX_SAMPLE_BYTES) return
@@ -78,6 +79,7 @@ object PlaybackThroughput {
 	 *
 	 * @return The bitrate in bits per second or 0 when nothing was measured yet
 	 */
+	@JvmStatic
 	fun getUsableBitrate(context: Context): Int {
 		val average = context.applicationContext.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
 			.getLong(KEY_AVERAGE, 0)
@@ -88,6 +90,7 @@ object PlaybackThroughput {
 	/**
 	 * The last measured throughput, for diagnostics.
 	 */
+	@JvmStatic
 	fun getLastMeasuredBitrate(context: Context): Long =
 		context.applicationContext.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
 			.getLong(KEY_LAST, 0)
