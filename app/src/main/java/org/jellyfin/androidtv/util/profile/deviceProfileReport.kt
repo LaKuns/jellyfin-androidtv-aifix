@@ -292,6 +292,14 @@ fun createDeviceProfileReport(
 				appendValue("not measured yet")
 			}
 		}
+		appendItem("Connection latency (no decoding)") {
+			val latency = PlaybackThroughput.getLinkLatency(context)
+			if (latency > 0) {
+				appendValue("$latency ms")
+			} else {
+				appendValue("not measured yet")
+			}
+		}
 		appendItem("Average download throughput") {
 			if (averageMeasured > 0) {
 				appendValue("${averageMeasured / 1_000_000} Mbps")
@@ -314,8 +322,12 @@ fun createDeviceProfileReport(
 			}
 		}
 		appendItem("Bottleneck") {
+			val latency = PlaybackThroughput.getLinkLatency(context)
 			val verdict = when {
 				linkBitrate <= 0 || averageMeasured <= 0 -> "unknown"
+				// A high round trip time makes the player wait between two segments even
+				// when the bandwidth is sufficient.
+				latency > 500 -> "connection latency"
 				averageMeasured * 2 < linkBitrate -> "device (the connection is faster)"
 				averageMeasured * 2 > linkBitrate -> "connection"
 				else -> "both are similar"

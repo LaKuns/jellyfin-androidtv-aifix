@@ -1,6 +1,11 @@
 package org.jellyfin.androidtv.ui.browsing
 
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
+import android.os.Build
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.View
@@ -50,6 +55,52 @@ class MainActivity : FragmentActivity() {
 	private val userPreferences by inject<UserPreferences>()
 	private val serverVersion by inject<ServerVersion>()
 
+	/**
+	 * Measures the speed and the latency of the connection and stores the result.
+	 */
+	private suspend fun measureConnection() {
+		val measurement = NetworkProbe.measureOnce(api) ?: return
+
+		PlaybackThroughput.recordLinkBitrate(this@MainActivity, measurement.bitrate)
+		PlaybackThroughput.recordLinkLatency(this@MainActivity, measurement.latencyMs)
+	}
+
+	/**
+	 * Measures the connection again whenever it changes.
+	 *
+	 * A device that is moved from wifi to a cable keeps the measurements of the old
+	 * connection otherwise, and the requested bitrate would stay at the value of the
+	 * slower connection.
+	 */
+	private fun observeNetworkChanges() {
+		val connectivityManager = getSystemService(ConnectivityManager::class.java) ?: return
+
+		// The connection that is already in use was measured when the app started.
+		val initialNetwork = connectivityManager.activeNetwork
+
+		val callback = object : ConnectivityManager.NetworkCallback() {
+			override fun onAvailable(network: Network) {
+				if (network == initialNetwork) return
+
+				lifecycleScope.launch {
+					val measurement = NetworkProbe.measure(api) ?: return@launch
+
+					PlaybackThroughput.recordLinkBitrate(this@MainActivity, measurement.bitrate)
+					PlaybackThroughput.recordLinkLatency(this@MainActivity, measurement.latencyMs)
+				}
+			}
+		}
+
+		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+			connectivityManager.registerDefaultNetworkCallback(callback)
+		} else {
+			val request = NetworkRequest.Builder()
+				.addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+				.build()
+			connectivityManager.registerNetworkCallback(request, callback)
+		}
+	}
+
 	override fun onCreate(savedInstanceState: Bundle?) {
 		applyTheme()
 
@@ -62,10 +113,15 @@ class MainActivity : FragmentActivity() {
 		lifecycleScope.launch {
 			// Measure the speed of the connection without decoding anything, so a slow
 			// playback can be attributed to the network or to the device itself.
-			NetworkProbe.measureOnce(api)?.let { PlaybackThroughput.recordLinkBitrate(this@MainActivity, it) }
+			measureConnection()
 
 			DeviceProfileReporter.reportOnce(this@MainActivity, api, userPreferences, serverVersion)
 		}
+
+		// The measurements belong to the connection they were taken on. When the device
+		// switches between wifi and a cable the old values are meaningless, so they are
+		// taken again as soon as the new connection is available.
+		observeNetworkChanges()
 
 		interactionTrackerViewModel.keepScreenOn.flowWithLifecycle(lifecycle, Lifecycle.State.RESUMED)
 			.onEach { keepScreenOn ->

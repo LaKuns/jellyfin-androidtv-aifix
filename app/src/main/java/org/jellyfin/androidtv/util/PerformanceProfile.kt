@@ -50,9 +50,10 @@ object PerformanceProfile {
 	 */
 	const val LOW_PERFORMANCE_MAX_VIDEO_WIDTH = 1920
 	const val LOW_PERFORMANCE_MAX_VIDEO_HEIGHT = 1080
-	// 18 Mbps keeps most good-quality 1080p sources on direct play while still
-	// moving Blu-ray remuxes and other high-load streams to the server.
-	const val LOW_PERFORMANCE_MAX_VIDEO_BITRATE = 18_000_000
+	// 12 Mbps is what a weak TV box can actually sustain while it decodes. A higher
+	// limit only helps on a fast wired connection, where the measured throughput is
+	// the binding constraint anyway.
+	const val LOW_PERFORMANCE_MAX_VIDEO_BITRATE = 12_000_000
 
 	/**
 	 * Bitrate requested from the server before the real throughput of the device is known.
@@ -60,9 +61,13 @@ object PerformanceProfile {
 	 * TV boxes are usually connected by wifi, which is often the limiting factor of the
 	 * whole playback. A stream that cannot be downloaded as fast as it is consumed empties
 	 * the buffer and makes the playback stutter every few seconds, so the requested bitrate
-	 * starts below the measured throughput of such devices and is corrected afterwards.
+	 * starts well below the measured throughput of such devices and is corrected afterwards.
+	 *
+	 * The value is deliberately low: on a weak wifi connection a higher bitrate makes the
+	 * player fall into a state where the download is paced by the playback and the buffer
+	 * can never recover, which shows up as a stutter every few seconds.
 	 */
-	const val LOW_PERFORMANCE_DEFAULT_VIDEO_BITRATE = 8_000_000
+	const val LOW_PERFORMANCE_DEFAULT_VIDEO_BITRATE = 5_000_000
 
 	@JvmStatic
 	fun isLowPerformanceDevice(context: Context): Boolean {

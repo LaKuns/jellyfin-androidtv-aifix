@@ -20,6 +20,7 @@ object PlaybackThroughput {
 	private const val KEY_AVERAGE = "average_bps"
 	private const val KEY_LAST = "last_bps"
 	private const val KEY_LINK = "link_bps"
+	private const val KEY_LINK_LATENCY = "link_latency_ms"
 
 	/** Number of downloads that are averaged. */
 	private const val WINDOW_SIZE = 8
@@ -27,10 +28,12 @@ object PlaybackThroughput {
 	/**
 	 * Part of the measured throughput that is requested from the server.
 	 *
-	 * The measurement already contains everything that slows the download down,
-	 * including the time the server needs to produce a segment and the cpu time
-	 * the decoder takes from the loader. Only a small margin is needed to keep
-	 * the buffer growing.
+	 * A measurement is the number of bytes the device pulled during one request cycle,
+	 * which is exactly the bitrate it is able to sustain. The measurement contains every
+	 * slowdown of a real playback: the time the server needs to hand out a segment, the
+	 * round trip time of the connection and the cpu time the decoder takes from the
+	 * loader. Only a small margin is kept so that a single slow cycle does not turn into
+	 * a stutter.
 	 */
 	private const val USABLE_FRACTION = 0.85
 
@@ -170,6 +173,28 @@ object PlaybackThroughput {
 			.putLong(KEY_LINK, bitsPerSecond)
 			.apply()
 	}
+
+	/**
+	 * Stores the round trip time of the connection, measured without any decoding.
+	 *
+	 * A high latency makes the player wait between two segments even when the
+	 * bandwidth is sufficient.
+	 */
+	@JvmStatic
+	fun recordLinkLatency(context: Context, latencyMs: Long) {
+		context.applicationContext.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+			.edit()
+			.putLong(KEY_LINK_LATENCY, latencyMs)
+			.apply()
+	}
+
+	/**
+	 * The round trip time of the connection, for diagnostics.
+	 */
+	@JvmStatic
+	fun getLinkLatency(context: Context): Long =
+		context.applicationContext.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+			.getLong(KEY_LINK_LATENCY, 0)
 
 	/**
 	 * The throughput of the connection, measured without any decoding.

@@ -10,19 +10,38 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /**
- * Measures the speed of the connection to the server without decoding anything.
+ * Measures the speed and the latency of the connection to the server without decoding
+ * anything.
  *
  * The download speed of a media stream cannot be used to tell a slow network apart from
  * a busy device: while a video is decoded the loader thread of the player competes with
  * the decoders for cpu time, so the transfer slows down even when the connection itself
  * is fast. Downloading a plain file therefore measures the connection on its own.
  *
- * The result is used to tell whether a stuttering playback is caused by the connection
- * or by the device itself, and a slow connection also lowers the requested bitrate.
+ * The latency matters as much as the speed. A weak wifi connection on a TV box is often
+ * fast enough to carry the stream but adds a second of round trip time to every request,
+ * and that delay is what makes the player wait between two segments.
  */
 object NetworkProbe {
 	/** Number of bytes that are downloaded for the measurement. */
 	private const val PROBE_SIZE = 8 * 1024 * 1024
+
+	/**
+	 * Number of bytes that are downloaded before the measurement starts.
+	 *
+	 * The first bytes of a connection are slow: the tcp window is still small and the
+	 * connection has to warm up. Measuring them would report a connection that is much
+	 * slower than it is.
+	 */
+	private const val WARMUP_SIZE = 2 * 1024 * 1024
+
+	/**
+	 * Size of a single read.
+	 *
+	 * Small reads make the throughput depend on the round trip time, because every read
+	 * has to wait for the next chunk of data to arrive.
+	 */
+	private const val BUFFER_SIZE = 512 * 1024
 
 	private const val TIMEOUT_MS = 20_000
 
@@ -34,12 +53,21 @@ object NetworkProbe {
 	/**
 	 * Runs the measurement once per app start.
 	 *
-	 * @return The measured throughput in bits per second or null when it failed
+	 * @return The measurement or null when it failed
 	 */
-	suspend fun measureOnce(api: ApiClient): Long? {
+	suspend fun measureOnce(api: ApiClient): LinkMeasurement? {
 		if (probed) return null
 		probed = true
 
+		return measure(api)
+	}
+
+	/**
+	 * Runs the measurement.
+	 *
+	 * @return The measurement or null when it failed
+	 */
+	suspend fun measure(api: ApiClient): LinkMeasurement? {
 		val token = api.accessToken ?: return null
 
 		return withContext(Dispatchers.IO) {
@@ -93,36 +121,51 @@ object NetworkProbe {
 	/**
 	 * Downloads a chunk of the item and measures how long it took.
 	 */
-	private fun download(api: ApiClient, token: String, itemId: String): Long? {
+	private fun download(api: ApiClient, token: String, itemId: String): LinkMeasurement? {
 		for (path in listOf("/Videos/$itemId/stream", "/Audio/$itemId/stream")) {
 			val url = buildUrl(api, "$path?static=true")
 			val result = downloadChunk(url, token) ?: continue
 
-			Timber.i("Network probe: %d bps", result)
+			Timber.i("Network probe: %d bps, %d ms latency", result.bitrate, result.latencyMs)
 			return result
 		}
 
 		return null
 	}
 
-	private fun downloadChunk(url: String, token: String): Long? {
+	private fun downloadChunk(url: String, token: String): LinkMeasurement? {
 		val connection = URL(url).openConnection() as HttpURLConnection
 		connection.connectTimeout = TIMEOUT_MS
 		connection.readTimeout = TIMEOUT_MS
 		authorize(connection, token)
-		connection.setRequestProperty("Range", "bytes=0-${PROBE_SIZE - 1}")
+		connection.setRequestProperty("Range", "bytes=0-${WARMUP_SIZE + PROBE_SIZE - 1}")
 
+		val buffer = ByteArray(BUFFER_SIZE)
 		var read = 0L
-		val start = SystemClock.elapsedRealtime()
+		var latencyMs = 0L
+		var elapsed = 0L
 
 		try {
 			connection.inputStream.use { stream ->
-				val buffer = ByteArray(64 * 1024)
-				while (read < PROBE_SIZE) {
+				// Warm up: the first bytes are slow and would distort the measurement.
+				while (read < WARMUP_SIZE) {
 					val count = stream.read(buffer)
 					if (count < 0) break
 					read += count
 				}
+
+				if (read < WARMUP_SIZE) return null
+
+				latencyMs = SystemClock.elapsedRealtime()
+				val start = SystemClock.elapsedRealtime()
+				val measured = read
+				while (read < WARMUP_SIZE + PROBE_SIZE) {
+					val count = stream.read(buffer)
+					if (count < 0) break
+					read += count
+				}
+				elapsed = SystemClock.elapsedRealtime() - start
+				if (read <= measured) return null
 			}
 		} catch (_: Exception) {
 			return null
@@ -130,9 +173,23 @@ object NetworkProbe {
 			connection.disconnect()
 		}
 
-		val elapsed = SystemClock.elapsedRealtime() - start
-		if (read < MIN_PROBE_BYTES || elapsed <= 0) return null
+		val bytes = read - WARMUP_SIZE
+		if (bytes < MIN_PROBE_BYTES || elapsed <= 0) return null
 
-		return read * 8 * 1000 / elapsed
+		return LinkMeasurement(
+			bitrate = bytes * 8 * 1000 / elapsed,
+			latencyMs = latencyMs,
+		)
 	}
 }
+
+/**
+ * The result of a connection measurement.
+ *
+ * @param bitrate The measured throughput in bits per second
+ * @param latencyMs The time the connection needed to deliver the first chunk of data
+ */
+data class LinkMeasurement(
+	val bitrate: Long,
+	val latencyMs: Long,
+)
