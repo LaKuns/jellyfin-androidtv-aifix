@@ -32,10 +32,14 @@ object PlaybackThroughput {
 	 * which is exactly the bitrate it is able to sustain. The measurement contains every
 	 * slowdown of a real playback: the time the server needs to hand out a segment, the
 	 * round trip time of the connection and the cpu time the decoder takes from the
-	 * loader. Only a small margin is kept so that a single slow cycle does not turn into
-	 * a stutter.
+	 * loader.
+	 *
+	 * The margin is generous because the speed of a wifi connection drops by more than
+	 * half now and then. A stream that is slightly too fast for the connection empties
+	 * the buffer, and the player then downloads the stream at the speed it is played
+	 * back, so the buffer can never recover.
 	 */
-	private const val USABLE_FRACTION = 0.85
+	private const val USABLE_FRACTION = 0.75
 
 	/** Lower bound of the request, playback should never degrade into an unusable bitrate. */
 	private const val MIN_BITRATE = 2_000_000
