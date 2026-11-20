@@ -10,8 +10,9 @@ import androidx.preference.PreferenceManager
  * Lightweight device classification used for UI decisions that have a large
  * memory or rendering cost.
  *
- * Android TV devices do not always report [ActivityManager.isLowRamDevice]
- * consistently, so the application heap limit is used as a second signal.
+ * The decision is based on the hardware of the device: the configuration of the
+ * system, the number of cores and the physical memory. An explicit choice of the
+ * user always wins over the automatic detection.
  */
 object PerformanceProfile {
 	private const val PERFORMANCE_MODE_KEY = "performance_mode"
@@ -19,19 +20,25 @@ object PerformanceProfile {
 	private const val PERFORMANCE_MODE_FULL = "FULL"
 
 	/**
-	 * Heap limit at or below which a device is treated as low performance.
+	 * Physical memory of the device at or below which it is treated as low performance.
 	 *
-	 * Preserve the conservative release threshold until the new UI is measured on
-	 * older hardware.
+	 * The heap limit of a single application is deliberately not used for this: it is
+	 * read from the system property `dalvik.vm.heapgrowthlimit`, which is 512 MB on
+	 * most devices, so a comparison against that value would classify every device
+	 * as a low performance one.
 	 */
-	private const val LOW_MEMORY_CLASS_MB = 512
+	private const val LOW_TOTAL_MEMORY_MB = 2048
 
 	/**
 	 * CPU core count at or below which a device is treated as low performance.
 	 *
-	 * Preserve the existing four-core threshold for this release.
+	 * A modern quad core chip renders the interface without trouble, and the number of
+	 * cores says nothing about the speed of a single core.
 	 */
-	private const val LOW_CPU_CORE_COUNT = 4
+	private const val LOW_CPU_CORE_COUNT = 2
+
+	/** Number of bytes in a megabyte, used to report the memory of the device. */
+	private const val BYTES_PER_MB = 1024L * 1024L
 
 	private var preferenceListener: SharedPreferences.OnSharedPreferenceChangeListener? = null
 
@@ -91,10 +98,30 @@ object PerformanceProfile {
 		cachedAutomaticProfile?.let { return it }
 
 		return synchronized(this) {
-			cachedAutomaticProfile ?: detectLowPerformanceDevice(context).also {
+			cachedAutomaticProfile ?: detectLowPerformanceDevice(context).isNotEmpty().also {
 				cachedAutomaticProfile = it
 			}
 		}
+	}
+
+	/**
+	 * Why the device is treated as a low performance device.
+	 *
+	 * The reason is reported instead of a plain flag, because the automatic
+	 * detection depends on the hardware of the device and a wrong result is hard
+	 * to explain without knowing which of the criteria was the deciding one.
+	 *
+	 * @return The reason, or an empty string when the device is not a low
+	 * performance device
+	 */
+	@JvmStatic
+	fun lowPerformanceReason(context: Context): String {
+		when (readMode(context)) {
+			PERFORMANCE_MODE_LOW -> return "the setting forces the low performance mode"
+			PERFORMANCE_MODE_FULL -> return ""
+		}
+
+		return detectLowPerformanceDevice(context)
 	}
 
 	/**
@@ -122,11 +149,30 @@ object PerformanceProfile {
 		}
 	}
 
-	private fun detectLowPerformanceDevice(context: Context): Boolean {
+	/**
+	 * Detects whether the hardware of the device is too weak for the full interface.
+	 *
+	 * @return The criterion that makes the device a low performance one, or an empty
+	 * string when the device is able to run the full interface
+	 */
+	private fun detectLowPerformanceDevice(context: Context): String {
 		val appContext = context.applicationContext
-		val activityManager = appContext.getSystemService<ActivityManager>() ?: return false
-		return activityManager.isLowRamDevice ||
-			activityManager.memoryClass <= LOW_MEMORY_CLASS_MB ||
-			Runtime.getRuntime().availableProcessors() <= LOW_CPU_CORE_COUNT
+		val activityManager = appContext.getSystemService<ActivityManager>() ?: return ""
+
+		// The configuration of the device decides whether the system itself considers
+		// it to be short on memory.
+		if (activityManager.isLowRamDevice) return "the system reports a low RAM device"
+
+		// Only a device with very few cores is treated as low performance.
+		val cores = Runtime.getRuntime().availableProcessors()
+		if (cores <= LOW_CPU_CORE_COUNT) return "only $cores CPU cores"
+
+		// The physical memory of the device is the relevant value here.
+		val memoryInfo = ActivityManager.MemoryInfo()
+		activityManager.getMemoryInfo(memoryInfo)
+		val totalMemoryMb = memoryInfo.totalMem / BYTES_PER_MB
+		if (totalMemoryMb <= LOW_TOTAL_MEMORY_MB) return "only $totalMemoryMb MB of memory"
+
+		return ""
 	}
 }

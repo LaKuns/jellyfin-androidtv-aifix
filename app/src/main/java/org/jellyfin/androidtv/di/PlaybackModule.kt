@@ -78,13 +78,22 @@ fun Scope.createPlaybackManager() = playbackManager(androidContext()) {
 	val bufferLength = userPreferences[UserPreferences.bufferLength]
 	// The player starts as soon as it has the start buffer of the stream. A fast
 	// connection delivers the first seconds quickly, so the picture appears sooner
-	// without risking a stall right at the beginning.
+	// without risking a stall right at the beginning. A buffer length that the
+	// user picked always wins over that.
 	val linkBitrate = PlaybackThroughput.getLinkSafeBitrate(androidContext())
-	val startBufferDuration = if (linkBitrate >= PerformanceProfile.FAST_CONNECTION_BITRATE) {
-		1.5.seconds
-	} else {
-		2.5.seconds
+	val userStartBuffer = bufferLength.bufferForPlaybackDuration
+	val startBufferDuration: Duration? = when {
+		userStartBuffer != null -> userStartBuffer
+		linkBitrate >= PerformanceProfile.FAST_CONNECTION_BITRATE -> 1.5.seconds
+		else -> 2.5.seconds
 	}
+
+	// The smaller buffers protect a device that cannot afford a large one. A
+	// connection that is fast enough does not need that protection: the buffer
+	// exists to survive a stall of the network, and a fast network stalls rarely.
+	// Shrinking it would only make the player fill it again more often.
+	val conservativeBuffer = lowPerformanceDevice &&
+		linkBitrate < PerformanceProfile.FAST_CONNECTION_BITRATE
 
 	val exoPlayerOptions = ExoPlayerOptions(
 		preferFfmpeg = userPreferences[UserPreferences.preferExoPlayerFfmpeg],
@@ -95,10 +104,10 @@ fun Scope.createPlaybackManager() = playbackManager(androidContext()) {
 		// turns a playable stream into a hard playback error.
 		enableDecoderFallback = true,
 		baseDataSourceFactory = get<HttpDataSource.Factory>(),
-		minBufferDuration = if (lowPerformanceDevice) 15.seconds else bufferLength.minBufferDuration,
-		maxBufferDuration = if (lowPerformanceDevice) 30.seconds else bufferLength.maxBufferDuration,
-		bufferForPlaybackDuration = if (lowPerformanceDevice) startBufferDuration else bufferLength.bufferForPlaybackDuration,
-		bufferForPlaybackAfterRebufferDuration = if (lowPerformanceDevice) 5.seconds else bufferLength.bufferForPlaybackAfterRebufferDuration,
+		minBufferDuration = if (conservativeBuffer) 15.seconds else bufferLength.minBufferDuration,
+		maxBufferDuration = if (conservativeBuffer) 30.seconds else bufferLength.maxBufferDuration,
+		bufferForPlaybackDuration = startBufferDuration,
+		bufferForPlaybackAfterRebufferDuration = if (conservativeBuffer) 5.seconds else bufferLength.bufferForPlaybackAfterRebufferDuration,
 	)
 	install(exoPlayerPlugin(get(), exoPlayerOptions))
 

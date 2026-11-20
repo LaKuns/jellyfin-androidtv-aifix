@@ -10,7 +10,6 @@ import android.media.audiofx.Equalizer;
 import android.net.Uri;
 import android.os.Handler;
 import android.os.SystemClock;
-import android.util.TypedValue;
 import android.view.View;
 import android.widget.FrameLayout;
 
@@ -48,6 +47,7 @@ import androidx.media3.extractor.ts.TsExtractor;
 import androidx.media3.ui.AspectRatioFrameLayout;
 import androidx.media3.ui.CaptionStyleCompat;
 import androidx.media3.ui.PlayerView;
+import androidx.media3.ui.SubtitleView;
 
 import org.jellyfin.androidtv.R;
 import org.jellyfin.androidtv.data.compat.StreamInfo;
@@ -84,6 +84,13 @@ public class VideoManager {
     private static final long DIRECT_PLAY_STARTUP_TIMEOUT_MS = 20_000L;
     private static final long DIRECT_STREAM_STARTUP_TIMEOUT_MS = 30_000L;
     private static final long TRANSCODE_STARTUP_TIMEOUT_MS = 75_000L;
+
+    /**
+     * The subtitle size that corresponds to the default size of the player.
+     *
+     * The preference for the subtitle size uses the same value as its default.
+     */
+    private static final float DEFAULT_SUBTITLE_TEXT_SIZE = 24f;
 
     private ZoomMode mZoomMode;
     private Activity mActivity;
@@ -161,7 +168,14 @@ public class VideoManager {
                 strokeColor,
                 TypefaceCompat.create(activity, Typeface.DEFAULT, textWeight, false)
         );
-        mExoPlayerView.getSubtitleView().setFixedTextSize(TypedValue.COMPLEX_UNIT_DIP, userPreferences.get(UserPreferences.Companion.getSubtitlesTextSize()));
+        // The size of the subtitles is configured in dp, which does not scale with
+        // the resolution of the television: the same subtitles are a fraction of
+        // the size on a 4K television as they are on a 1080p one. The size is
+        // therefore applied as a fraction of the height of the video, with the
+        // configured size used as the scale around the default of the player.
+        float subtitleTextSize = userPreferences.get(UserPreferences.Companion.getSubtitlesTextSize());
+        float subtitleTextSizeFraction = subtitleTextSize / DEFAULT_SUBTITLE_TEXT_SIZE * SubtitleView.DEFAULT_TEXT_SIZE_FRACTION;
+        mExoPlayerView.getSubtitleView().setFractionalTextSize(subtitleTextSizeFraction);
         mExoPlayerView.getSubtitleView().setBottomPaddingFraction(userPreferences.get(UserPreferences.Companion.getSubtitlesOffsetPosition()));
         mExoPlayerView.getSubtitleView().setStyle(subtitleStyle);
 
@@ -331,10 +345,12 @@ public class VideoManager {
         } else if (bufferLength == BufferLength.LARGE) {
             loadControl = new DefaultLoadControl.Builder()
                     .setBufferDurationsMs(50_000, 120_000, 2_500, 5_000)
+                    .setPrioritizeTimeOverSizeThresholds(true)
                     .build();
         } else if (bufferLength == BufferLength.EXTRA_LARGE) {
             loadControl = new DefaultLoadControl.Builder()
                     .setBufferDurationsMs(80_000, 240_000, 5_000, 10_000)
+                    .setPrioritizeTimeOverSizeThresholds(true)
                     .build();
         } else {
             loadControl = new DefaultLoadControl();

@@ -94,18 +94,26 @@ class BackgroundService(
 		// Enable blur for backdrops
 		_blurBackground.value = backdropBehavior == BackdropBehavior.BACKDROP_WITH_BLUR && !lowPerformanceDevice
 
-		// Ask the server for screen-sized images. Loading original/4K backdrops here
-		// is particularly expensive because they are kept as ImageBitmaps.
+		val backdropUrls = backdropUrls(baseItem)
+
+		if (backdropUrls.isEmpty()) clearBackgrounds()
+		else requestBackgrounds(backdropUrls)
+	}
+
+	/**
+	 * The urls of the backdrops of an item, sized for the screen.
+	 *
+	 * Asking the server for screen-sized images matters here: the original
+	 * backdrops are kept as bitmaps and are far too expensive to decode.
+	 */
+	private fun backdropUrls(baseItem: BaseItemDto): Set<String> {
 		val (width, height) = backgroundSize
-		val backdropUrls = (baseItem.itemBackdropImages + baseItem.parentBackdropImages)
+		return (baseItem.itemBackdropImages + baseItem.parentBackdropImages)
 			.asSequence()
 			.map { it.getUrl(api, fillWidth = width, fillHeight = height) }
 			.distinct()
 			.take(maxBackgroundCount)
 			.toSet()
-
-		if (backdropUrls.isEmpty()) clearBackgrounds()
-		else requestBackgrounds(backdropUrls)
 	}
 
 	/**
@@ -120,6 +128,14 @@ class BackgroundService(
 			if (requestedBackgroundUrls != null || _currentBackground.value != null) clearBackgrounds()
 			return
 		}
+
+		// Every episode of a show uses the backdrop of that show, so moving the
+		// focus inside a show must not download and decode it again.
+		if (baseItem != null) {
+			val urls = backdropUrls(baseItem)
+			if (urls.isNotEmpty() && requestedBackgroundUrls?.any { it in urls } == true) return
+		}
+
 		setBackground(baseItem)
 	}
 
@@ -177,7 +193,9 @@ class BackgroundService(
 		loadBackgroundsJob?.cancel()
 		updateBackgroundTimerJob?.cancel()
 		_backgrounds = emptyList()
-		_currentBackground.value = null
+		// The background that is on screen stays until the new one is ready. A
+		// black flash in the middle of the browsing is more noticeable than a
+		// background that is one item behind.
 
 		val (width, height) = backgroundSize
 		loadBackgroundsJob = scope.launch(Dispatchers.IO) {

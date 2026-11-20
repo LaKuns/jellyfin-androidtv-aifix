@@ -1,7 +1,10 @@
 package org.jellyfin.androidtv.util.profile
 
 import android.content.Context
+import android.util.DisplayMetrics
 import android.util.Size
+import android.view.Display
+import androidx.core.content.ContextCompat
 import androidx.media3.common.MimeTypes
 import androidx.preference.PreferenceManager
 import org.jellyfin.androidtv.constant.Codec
@@ -11,6 +14,7 @@ import org.jellyfin.androidtv.preference.constant.BitstreamAudioFormat
 import org.jellyfin.androidtv.preference.constant.BitstreamAudioMode
 import org.jellyfin.androidtv.preference.constant.HdrFormat
 import org.jellyfin.androidtv.preference.constant.HdrOverrideMode
+import org.jellyfin.androidtv.util.AndroidVersion
 import org.jellyfin.androidtv.util.PerformanceProfile
 import org.jellyfin.playback.core.support.PlaybackThroughput
 import org.jellyfin.androidtv.util.profile.codec.isPassthroughAudioAvailable
@@ -112,8 +116,17 @@ fun createDeviceProfile(
 	serverVersion: ServerVersion,
 	sourceBitrate: Int? = null,
 ) = PerformanceProfile.isLowPerformanceDevice(context).let { lowPerformanceDevice ->
+	// The device profile answers the question "what may the server send to this
+	// device". A format that can only be decoded in software is not playable on
+	// a TV box, so the server has to transcode it instead of direct playing it.
+	//
+	// The preference decides whether software decoders are part of that answer.
+	// It is deliberately not coupled to the performance profile: a device that
+	// is too slow for the full interface is not a device without a hardware
+	// decoder, and a device with a hardware decoder is not necessarily able to
+	// decode everything that a software decoder claims.
 	val mediaTest = MediaCodecCapabilitiesTest(
-		userPreferences[UserPreferences.softwareCodecsEnabled] && !lowPerformanceDevice
+		userPreferences[UserPreferences.softwareCodecsEnabled]
 	)
 
 	// A device without a hardware decoder for multichannel audio has to decode it in
@@ -139,6 +152,13 @@ fun createDeviceProfile(
 	// a transcoded stream down when it is asked for less than the bitrate of the
 	// source, which costs the resolution of the original.
 	val throughputLimit = PlaybackThroughput.getStreamBitrateLimit(context, sourceBitrate)
+
+	// The server must not send a stream that is larger than the display. The
+	// picture is scaled down by the graphics hardware anyway, and the pixels
+	// that are scaled away cost decoding power and bandwidth without ever being
+	// visible.
+	val resolutionLimit = getResolutionLimit(context, lowPerformanceDevice)
+	val displayHdr = getDisplayHdrCapabilities(context)
 
 	createDeviceProfile(
 		mediaTest = mediaTest,
@@ -183,8 +203,9 @@ fun createDeviceProfile(
 		forceDisabledHdr = userPreferences.getHdrRangeTypesFor(HdrOverrideMode.DISABLE),
 		disableHevcDirectPlay = userPreferences[UserPreferences.disableHevcDirectPlay],
 		disableHevcMain10DirectPlay = userPreferences[UserPreferences.disableHevcMain10DirectPlay],
-		maxVideoWidth = PerformanceProfile.LOW_PERFORMANCE_MAX_VIDEO_WIDTH.takeIf { lowPerformanceDevice },
-		maxVideoHeight = PerformanceProfile.LOW_PERFORMANCE_MAX_VIDEO_HEIGHT.takeIf { lowPerformanceDevice },
+		maxVideoWidth = resolutionLimit?.width,
+		maxVideoHeight = resolutionLimit?.height,
+		displayHdr = displayHdr,
 	)
 }
 
@@ -206,6 +227,7 @@ fun createDeviceProfile(
 	disableHevcMain10DirectPlay: Boolean = false,
 	maxVideoWidth: Int? = null,
 	maxVideoHeight: Int? = null,
+	displayHdr: DisplayHdrCapabilities = DisplayHdrCapabilities(),
 ) = buildDeviceProfile {
 	val allowedAudioCodecs = when {
 		downMixAudio -> downmixSupportedAudioCodecs
@@ -237,6 +259,13 @@ fun createDeviceProfile(
 	val supportsAV1 = mediaTest.supportsAV1()
 	val supportsAV1Main10 = mediaTest.supportsAV1Main10()
 	val supportsVC1 = mediaTest.supportsVc1()
+	// VP8, VP9 and MPEG-4 part 2 are decoded in hardware by only a few of the
+	// TV chips. A stream that the device can only decode in software is played
+	// by the server instead, because a software decoder is much too slow for the
+	// picture on a box with four small cores.
+	val supportsVP8 = mediaTest.supportsVP8()
+	val supportsVP9 = mediaTest.supportsVP9()
+	val supportsMPEG4 = mediaTest.supportsMPEG4()
 	val maxResolutionAVC = mediaTest.getMaxResolution(MimeTypes.VIDEO_H264).limitTo(maxVideoWidth, maxVideoHeight)
 	val maxResolutionHevc = mediaTest.getMaxResolution(MimeTypes.VIDEO_H265).limitTo(maxVideoWidth, maxVideoHeight)
 	val maxResolutionAV1 = mediaTest.getMaxResolution(MimeTypes.VIDEO_AV1).limitTo(maxVideoWidth, maxVideoHeight)
@@ -332,16 +361,19 @@ fun createDeviceProfile(
 			Codec.Container.XVID,
 		)
 
+		// A codec that the device can only decode in software is not offered for
+		// direct play: the server prepares such a stream instead of letting the
+		// device spend its few cores on it.
 		videoCodec(
 			Codec.Video.AV1,
 			Codec.Video.H264,
 			Codec.Video.HEVC,
-			Codec.Video.MPEG,
 			Codec.Video.MPEG2VIDEO,
 			Codec.Video.VC1,
-			Codec.Video.VP8,
-			Codec.Video.VP9,
 		)
+		if (supportsMPEG4) videoCodec(Codec.Video.MPEG)
+		if (supportsVP8) videoCodec(Codec.Video.VP8)
+		if (supportsVP9) videoCodec(Codec.Video.VP9)
 
 		audioCodec(*allowedAudioCodecs)
 	}
@@ -505,9 +537,50 @@ fun createDeviceProfile(
 		}
 	}
 
-	// The UI can remain responsive on some low-end TVs while their video decoder cannot
-	// sustain 4K/high bitrate direct play. Tell the server to produce a smaller stream
-	// instead of relying on a software decoder and dropping frames on the TV.
+	// VP8, VP9 and MPEG-4 part 2 profiles
+	//
+	// A profile that no stream can match keeps the server from direct playing a
+	// format that the device would have to decode in software.
+	codecProfile {
+		type = CodecType.VIDEO
+		codec = Codec.Video.VP8
+
+		conditions {
+			when {
+				!supportsVP8 -> ProfileConditionValue.VIDEO_PROFILE equals "none"
+				else -> ProfileConditionValue.VIDEO_PROFILE notEquals "none"
+			}
+		}
+	}
+
+	codecProfile {
+		type = CodecType.VIDEO
+		codec = Codec.Video.VP9
+
+		conditions {
+			when {
+				!supportsVP9 -> ProfileConditionValue.VIDEO_PROFILE equals "none"
+				else -> ProfileConditionValue.VIDEO_PROFILE notEquals "none"
+			}
+		}
+	}
+
+	codecProfile {
+		type = CodecType.VIDEO
+		codec = Codec.Video.MPEG
+
+		conditions {
+			when {
+				!supportsMPEG4 -> ProfileConditionValue.VIDEO_PROFILE equals "none"
+				else -> ProfileConditionValue.VIDEO_PROFILE notEquals "none"
+			}
+		}
+	}
+
+	// A stream that is larger than the display is scaled down by the graphics
+	// hardware, so the server is asked for a stream that fits the screen. A
+	// device that is too slow for the full interface gets a smaller limit still,
+	// because its decoder cannot sustain a high bitrate or 4K in real time.
 	if (maxVideoWidth != null && maxVideoHeight != null) {
 		arrayOf(
 			Codec.Video.AV1,
@@ -578,6 +651,16 @@ fun createDeviceProfile(
 
 	/// HDR exclude list
 
+	// HDR10+ is carried by 10 bit AV1 or HEVC. The decoder of a television rarely
+	// reports the HDR10+ profile, but a television that can show the format
+	// handles it. The server tone maps such a stream away otherwise, which costs
+	// the server a lot of work and loses the quality of the picture.
+	val av1Hdr10Plus = supportsAV1Main10 && (supportsAV1HDR10Plus || displayHdr.supportsHdr10Plus)
+	val hevcHdr10Plus = supportsHevcMain10 && (supportsHevcHDR10Plus || displayHdr.supportsHdr10Plus)
+
+	// HLG is a property of the television as much as of the decoder.
+	val hevcHlg = supportsHevcMain10 && displayHdr.supportsHlg
+
 	val unsupportedRangeTypesAv1 = buildSet {
 		add(VideoRangeType.DOVI_INVALID)
 
@@ -587,7 +670,7 @@ fun createDeviceProfile(
 			if (!supportsAV1HDR10Plus) add(VideoRangeType.DOVI_WITH_HDR10_PLUS)
 		}
 
-		if (!supportsAV1HDR10Plus) {
+		if (!av1Hdr10Plus) {
 			add(VideoRangeType.HDR10_PLUS)
 
 			if (!mediaTest.supportsAV1HDR10()) add(VideoRangeType.HDR10)
@@ -618,10 +701,12 @@ fun createDeviceProfile(
 			}
 		}
 
-		if (!supportsHevcHDR10Plus) {
+		if (!hevcHdr10Plus) {
 			add(VideoRangeType.HDR10_PLUS)
 			if (!supportsHevcHDR10) add(VideoRangeType.HDR10)
 		}
+
+		if (!hevcHlg) add(VideoRangeType.HLG)
 
 		if (KnownDefects.hevcDoviHdr10PlusBug) {
 			add(VideoRangeType.DOVI_WITH_HDR10_PLUS)
@@ -716,7 +801,60 @@ private fun DeviceProfileBuilder.subtitleProfile(
 	if (encode) subtitleProfile(format, SubtitleDeliveryMethod.ENCODE)
 }
 
+/**
+ * The HDR formats that the television can show.
+ *
+ * A stream in a format that the television cannot show is tone mapped by the
+ * server, which costs the server a lot of work and loses the quality of the
+ * picture. The decoder alone does not tell whether the television can show it:
+ * HDR10+ and HLG are properties of the display.
+ */
+data class DisplayHdrCapabilities(
+	val supportsHdr10: Boolean = false,
+	val supportsHdr10Plus: Boolean = false,
+	val supportsHlg: Boolean = false,
+)
+
+private fun getDisplayHdrCapabilities(context: Context): DisplayHdrCapabilities {
+	if (!AndroidVersion.isAtLeastN) return DisplayHdrCapabilities()
+
+	val display = ContextCompat.getDisplayOrDefault(context)
+	val types = display.hdrCapabilities?.supportedHdrTypes ?: intArrayOf()
+
+	return DisplayHdrCapabilities(
+		supportsHdr10 = types.contains(Display.HdrCapabilities.HDR_TYPE_HDR10),
+		supportsHdr10Plus = types.contains(Display.HdrCapabilities.HDR_TYPE_HDR10_PLUS),
+		supportsHlg = types.contains(Display.HdrCapabilities.HDR_TYPE_HLG),
+	)
+}
+
 private fun Size.limitTo(maxWidth: Int?, maxHeight: Int?): Size = Size(
 	width.coerceAtMost(maxWidth ?: width),
 	height.coerceAtMost(maxHeight ?: height),
 )
+
+/**
+ * The largest resolution that the server may send to the device.
+ *
+ * A stream that is larger than the display is scaled down by the graphics
+ * hardware, so the pixels that are scaled away are paid for in decoding power
+ * and bandwidth without ever being visible. A device that is too slow for the
+ * full interface gets a smaller limit still, because its decoder cannot
+ * sustain a high bitrate or 4K in real time.
+ */
+private fun getResolutionLimit(context: Context, lowPerformanceDevice: Boolean): Size? {
+	val display = ContextCompat.getDisplayOrDefault(context)
+	val metrics = DisplayMetrics()
+	display.getRealMetrics(metrics)
+
+	val displayWidth = metrics.widthPixels
+	val displayHeight = metrics.heightPixels
+	if (displayWidth <= 0 || displayHeight <= 0) return null
+
+	if (!lowPerformanceDevice) return Size(displayWidth, displayHeight)
+
+	return Size(
+		minOf(PerformanceProfile.LOW_PERFORMANCE_MAX_VIDEO_WIDTH, displayWidth),
+		minOf(PerformanceProfile.LOW_PERFORMANCE_MAX_VIDEO_HEIGHT, displayHeight),
+	)
+}

@@ -11,6 +11,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -23,8 +24,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
@@ -32,6 +36,10 @@ import org.jellyfin.androidtv.R
 import org.jellyfin.androidtv.data.service.BackgroundService
 import org.jellyfin.androidtv.util.PerformanceProfile
 import org.koin.compose.koinInject
+import kotlin.math.max
+
+/** Radius of the blur that is applied to the background. */
+private val BLUR_RADIUS = 10.dp
 
 @Composable
 private fun AppThemeBackground() {
@@ -98,18 +106,72 @@ private fun BackgroundImage(
 	background: ImageBitmap?,
 	blur: Boolean,
 ) {
-	if (background != null) {
-		Image(
-			bitmap = background,
-			contentDescription = null,
-			alignment = Alignment.Center,
-			contentScale = ContentScale.Crop,
-			colorFilter = ColorFilter.tint(colorResource(R.color.background_filter), BlendMode.SrcAtop),
-			modifier = Modifier
-				.fillMaxSize()
-				.then(if (blur) Modifier.blur(10.dp) else Modifier)
-		)
-	} else {
+	if (background == null) {
 		AppThemeBackground()
+		return
 	}
+
+	val tint = colorResource(R.color.background_filter)
+	val colorFilter = remember(tint) { ColorFilter.tint(tint, BlendMode.SrcAtop) }
+
+	if (!blur) {
+		BackgroundBitmap(background, colorFilter, Modifier.fillMaxSize())
+		return
+	}
+
+	// The blur is applied to a layer that has the resolution of the image and the
+	// result is scaled up to the screen afterwards. A blur of the fullscreen
+	// picture runs with the resolution of the television, which is expensive on the
+	// weak GPUs that are found in TV boxes.
+	//
+	// The scaling factor is the one that ContentScale.Crop would use, so the
+	// picture itself stays exactly the same.
+	val density = LocalDensity.current.density
+	val configuration = LocalConfiguration.current
+	val screenWidth = configuration.screenWidthDp * density
+	val screenHeight = configuration.screenHeightDp * density
+	val imageWidth = background.width
+	val imageHeight = background.height
+
+	val imageIsUsable = imageWidth > 0 && imageHeight > 0
+	val screenIsUsable = screenWidth > 0 && screenHeight > 0
+	if (!imageIsUsable || !screenIsUsable) {
+		BackgroundBitmap(background, colorFilter, Modifier.fillMaxSize())
+		return
+	}
+
+	val scale = max(screenWidth / imageWidth, screenHeight / imageHeight)
+
+	Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+		Box(
+			modifier = Modifier
+				.size(
+					(imageWidth / density).dp,
+					(imageHeight / density).dp,
+				)
+				.blur(BLUR_RADIUS)
+				.graphicsLayer {
+					scaleX = scale
+					scaleY = scale
+				},
+		) {
+			BackgroundBitmap(background, colorFilter, Modifier.fillMaxSize())
+		}
+	}
+}
+
+@Composable
+private fun BackgroundBitmap(
+	background: ImageBitmap,
+	colorFilter: ColorFilter,
+	modifier: Modifier,
+) {
+	Image(
+		bitmap = background,
+		contentDescription = null,
+		alignment = Alignment.Center,
+		contentScale = ContentScale.Crop,
+		colorFilter = colorFilter,
+		modifier = modifier,
+	)
 }

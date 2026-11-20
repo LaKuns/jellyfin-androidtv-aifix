@@ -1,5 +1,6 @@
 package org.jellyfin.androidtv.util.profile
 
+import android.app.ActivityManager
 import android.content.Context
 import android.media.MediaCodecList
 import android.os.Build
@@ -7,12 +8,14 @@ import android.util.Range
 import android.view.Display
 import android.view.Surface
 import androidx.core.content.ContextCompat
+import androidx.core.content.getSystemService
 import androidx.media3.common.MimeTypes
 import kotlinx.serialization.json.Json
 import org.jellyfin.androidtv.BuildConfig
 import org.jellyfin.androidtv.constant.Codec
 import org.jellyfin.androidtv.preference.UserPreferences
 import org.jellyfin.androidtv.util.AndroidVersion
+import org.jellyfin.androidtv.util.PerformanceProfile
 import org.jellyfin.androidtv.util.appendCodeBlock
 import org.jellyfin.androidtv.util.appendDetails
 import org.jellyfin.androidtv.util.appendItem
@@ -24,6 +27,9 @@ import org.jellyfin.playback.core.support.PlaybackThroughput
 import org.jellyfin.sdk.api.client.util.ApiSerializer
 import org.jellyfin.sdk.model.ServerVersion
 import kotlin.time.Duration.Companion.nanoseconds
+
+/** Number of bytes in a megabyte, used to report the memory of the device. */
+private const val BYTES_PER_MB = 1024L * 1024L
 
 private val prettyPrintJson = Json { prettyPrint = true }
 private fun formatJson(json: String) = prettyPrintJson.encodeToString(prettyPrintJson.parseToJsonElement(json))
@@ -395,5 +401,31 @@ fun createDeviceProfileReport(
 		appendItem("Device codename") { appendValue(Build.DEVICE) }
 		if (AndroidVersion.isAtLeastS) appendItem("Device SKU") { appendValue(Build.SKU) }
 		if (AndroidVersion.isAtLeastS) appendItem("Device SOC") { appendValue(Build.SOC_MODEL) }
+	}
+
+	// The criteria that decide whether the device runs the full interface or the
+	// reduced one. They depend on the hardware of the device, so a wrong
+	// classification is only explainable with the values of the device itself.
+	appendSection("Performance profile") {
+		appendItem("Low performance device") {
+			appendValue(PerformanceProfile.isLowPerformanceDevice(context).toString())
+		}
+		appendItem("Reason") {
+			val reason = PerformanceProfile.lowPerformanceReason(context)
+			appendValue(reason.ifEmpty { "the device runs the full interface" })
+		}
+		appendItem("CPU cores") { appendValue(Runtime.getRuntime().availableProcessors().toString()) }
+
+		val activityManager = context.getSystemService<ActivityManager>()
+		if (activityManager != null) {
+			val memoryInfo = ActivityManager.MemoryInfo()
+			activityManager.getMemoryInfo(memoryInfo)
+
+			appendItem("Physical memory") {
+				appendValue("${memoryInfo.totalMem / BYTES_PER_MB} MB")
+			}
+			appendItem("App heap limit") { appendValue("${activityManager.memoryClass} MB") }
+			appendItem("Low RAM device") { appendValue(activityManager.isLowRamDevice.toString()) }
+		}
 	}
 }

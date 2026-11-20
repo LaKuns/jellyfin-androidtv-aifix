@@ -398,6 +398,24 @@ public class PlaybackController implements PlaybackControllerNotifiable {
         }
     }
 
+    /**
+     * Restores the refresh rate of the display.
+     *
+     * The refresh rate is changed to match the frame rate of the video, but a
+     * display that stays at 24 Hz makes the whole interface feel slow once the
+     * playback has ended.
+     */
+    private void resetRefreshRate() {
+        if (mFragment == null) return;
+
+        WindowManager.LayoutParams params = mFragment.requireActivity().getWindow().getAttributes();
+        if (params.preferredDisplayModeId == 0) return;
+
+        Timber.i("Restoring the default refresh rate");
+        params.preferredDisplayModeId = 0;
+        mFragment.requireActivity().getWindow().setAttributes(params);
+    }
+
     // central place to update mCurrentPosition
     private void refreshCurrentPosition() {
         long newPos = -1;
@@ -852,10 +870,15 @@ public class PlaybackController implements PlaybackControllerNotifiable {
 
     public void startSpinner() {
         spinnerOff = false;
+        // The server needs time to prepare the stream, and the video surface is
+        // plain black during that time. The indicator tells the user that the
+        // playback is starting.
+        if (mFragment != null) mFragment.setBufferingVisible(true);
     }
 
     public void stopSpinner() {
         spinnerOff = true;
+        if (mFragment != null) mFragment.setBufferingVisible(false);
     }
 
     public int getAudioStreamIndex() {
@@ -1040,6 +1063,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
             mFragment.closePlayer();
         }
         stop();
+        resetRefreshRate();
         if (mVideoManager != null)
             mVideoManager.destroy();
         mFragment = null;

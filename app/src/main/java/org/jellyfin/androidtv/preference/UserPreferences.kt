@@ -341,8 +341,14 @@ class UserPreferences(context: Context) : SharedPreferenceStore(
 
 		/**
 		 * Enable the use of software-based codecs.
+		 *
+		 * Off by default: the device profile tells the server what may be sent to
+		 * the device, and a format that only a software decoder can play is not
+		 * playable on a TV box. With the option enabled the server direct plays
+		 * such a stream and the device decodes it in software, which is far too
+		 * slow on the chips that are found in such boxes.
 		 */
-		var softwareCodecsEnabled = booleanPreference("software_codecs_enabled", true)
+		var softwareCodecsEnabled = booleanPreference("software_codecs_enabled", false)
 
 		/**
 		 * Stores the interval for the photo player.

@@ -1306,6 +1306,23 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
         });
     }
 
+    /**
+     * Shows or hides the indicator that tells the user that the playback is starting.
+     *
+     * The server needs time to prepare a transcoded stream and the video surface
+     * is plain black during that time. Without the indicator the user cannot tell
+     * "loading" from "frozen".
+     */
+    public void setBufferingVisible(boolean visible) {
+        if (binding == null) return;
+
+        View buffering = binding.playbackBuffering;
+        int target = visible ? View.VISIBLE : View.GONE;
+        if (buffering.getVisibility() == target) return;
+
+        buffering.setVisibility(target);
+    }
+
     public void closePlayer() {
         if (navigating) return;
         navigating = true;

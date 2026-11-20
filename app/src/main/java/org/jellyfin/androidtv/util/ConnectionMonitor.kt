@@ -11,6 +11,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -57,6 +58,17 @@ object ConnectionMonitor {
 	private const val MAX_AGE_MS = 10 * 60 * 1000L
 
 	/**
+	 * Interval at which the age of the measurement is checked.
+	 *
+	 * A connection that is measured once is never measured again while the
+	 * application runs, but a connection becomes slower: a neighbour that uses
+	 * the same frequency band halves the throughput without any change to the
+	 * network itself. The player would keep the bitrate of the old measurement
+	 * and the buffer would run dry every few seconds.
+	 */
+	private const val REFRESH_CHECK_INTERVAL_MS = 2 * 60 * 1000L
+
+	/**
 	 * Scope of the monitor.
 	 *
 	 * The monitor belongs to the process, so the measurements outlive the
@@ -88,6 +100,16 @@ object ConnectionMonitor {
 
 		if (started) return measurement
 		started = true
+
+		// The measurement of a connection becomes outdated while the application
+		// runs. It is repeated when it is too old, which keeps the requested
+		// bitrate in line with the speed of the connection.
+		scope.launch {
+			while (isActive) {
+				delay(REFRESH_CHECK_INTERVAL_MS)
+				measure(appContext, api)
+			}
+		}
 
 		val connectivityManager = appContext.getSystemService(ConnectivityManager::class.java) ?: return measurement
 

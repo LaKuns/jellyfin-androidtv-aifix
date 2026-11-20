@@ -53,6 +53,22 @@ class MediaCodecCapabilitiesTest(
 
 	fun supportsVc1(): Boolean = codecQuery.hasCodecForMime(MimeTypes.VIDEO_VC1)
 
+	/**
+	 * VP8 is decoded in hardware by only a few of the TV chips.
+	 */
+	fun supportsVP8(): Boolean = codecQuery.hasCodecForMime(MimeTypes.VIDEO_VP8)
+
+	/**
+	 * VP9 is decoded in hardware by only a few of the TV chips.
+	 */
+	fun supportsVP9(): Boolean = codecQuery.hasCodecForMime(MimeTypes.VIDEO_VP9)
+
+	/**
+	 * MPEG-4 part 2 is a legacy format that no current TV chip decodes in
+	 * hardware.
+	 */
+	fun supportsMPEG4(): Boolean = codecQuery.hasCodecForMime(MimeTypes.VIDEO_MP4V)
+
 	fun getMaxResolution(mime: String): Size = codecQuery.getMaxResolution(mime)
 
 	fun getMaxAudioChannels(): Int = codecQuery.getMaxAudioChannels(MimeTypes.AUDIO_AAC)

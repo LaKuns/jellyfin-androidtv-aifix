@@ -23,8 +23,15 @@ import java.net.URL
  * and that delay is what makes the player wait between two segments.
  */
 object NetworkProbe {
-	/** Number of bytes that are downloaded for the measurement. */
-	private const val PROBE_SIZE = 8 * 1024 * 1024
+	/**
+	 * Number of bytes that are downloaded for the measurement.
+	 *
+	 * The measurement runs while the application starts and while the connection
+	 * changes, and it shares the bandwidth with the first playback. A large
+	 * sample measures the connection more precisely, but it also keeps the
+	 * connection busy for a long time, so the sample is kept small.
+	 */
+	private const val PROBE_SIZE = 2 * 1024 * 1024
 
 	/**
 	 * Number of bytes that are downloaded before the measurement starts.
@@ -33,7 +40,7 @@ object NetworkProbe {
 	 * connection has to warm up. Measuring them would report a connection that is much
 	 * slower than it is.
 	 */
-	private const val WARMUP_SIZE = 2 * 1024 * 1024
+	private const val WARMUP_SIZE = 512 * 1024
 
 	/**
 	 * Size of a single read.

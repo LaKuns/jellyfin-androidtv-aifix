@@ -23,6 +23,14 @@ private fun isKnownSoftwareCodecName(name: String): Boolean =
 		name.startsWith("c2.android.") ||
 		name.startsWith("c2.google.")
 
+/** Width that is assumed when a decoder does not report the sizes it supports. */
+private const val DEFAULT_MAX_WIDTH = 1920
+
+/** Height that is assumed when a decoder does not report the sizes it supports. */
+private const val DEFAULT_MAX_HEIGHT = 1080
+
+private val DEFAULT_MAX_RESOLUTION = Size(DEFAULT_MAX_WIDTH, DEFAULT_MAX_HEIGHT)
+
 /**
  * Queries device codec capabilities from Android's [MediaCodecList].
  */
@@ -76,6 +84,14 @@ class MediaCodecQuery(
 
 		val maxWidth = resolutions.maxOfOrNull { it.first } ?: 0
 		val maxHeight = resolutions.maxOfOrNull { it.second } ?: 0
+
+		// A decoder that does not report the sizes it supports would claim a
+		// resolution of zero, which tells the server that the device cannot play
+		// anything at all. A conservative limit is much closer to the truth.
+		if (maxWidth <= 0 || maxHeight <= 0) {
+			Timber.d("No resolution reported for %s, using the conservative limit", mime)
+			return DEFAULT_MAX_RESOLUTION
+		}
 
 		Timber.d("Computed max resolution for %s: %dx%d", mime, maxWidth, maxHeight)
 		return Size(maxWidth, maxHeight)
