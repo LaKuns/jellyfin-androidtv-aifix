@@ -145,6 +145,13 @@ public class FullDetailsFragment extends Fragment implements RecordingIndicatorV
     UUID mSelectedSeasonId;
     UUID mHighlightedEpisodeId;
     List<BaseItemDto> mEpisodeSeasons;
+
+    /**
+     * The next up episode of the series, kept because several parts of the screen
+     * ask for it.
+     */
+    BaseItemDto mNextUpEpisode;
+    boolean mNextUpEpisodeLoaded;
     int mEpisodePageStart;
     EpisodeCatalog mEpisodeCatalog;
     Job mEpisodeSelectionJob;
@@ -535,6 +542,8 @@ public class FullDetailsFragment extends Fragment implements RecordingIndicatorV
             mSelectedSeasonId = null;
             mHighlightedEpisodeId = null;
             mEpisodeSeasons = null;
+            mNextUpEpisode = null;
+            mNextUpEpisodeLoaded = false;
             mEpisodePageStart = 0;
             if (mEpisodeSelectionJob != null) mEpisodeSelectionJob.cancel(new CancellationException("Item changed"));
             mEpisodeSelectionJob = null;

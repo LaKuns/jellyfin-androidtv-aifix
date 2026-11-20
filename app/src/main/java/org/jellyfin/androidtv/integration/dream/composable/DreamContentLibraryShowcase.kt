@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -26,22 +27,26 @@ fun DreamContentLibraryShowcase(
 ) = Box(
 	modifier = Modifier.fillMaxSize(),
 ) {
-	ZoomBox(
-		initialValue = 1f,
-		targetValue = 1.1f,
-		delayMillis = 1_000,
-		durationMillis = 30_000,
-	) {
-		Image(
-			bitmap = content.backdrop.asImageBitmap(),
-			contentDescription = null,
-			alignment = Alignment.Center,
-			contentScale = ContentScale.Crop,
-			modifier = Modifier.fillMaxSize()
-		)
+	// The zoom is played once for every backdrop. The key starts the animation
+	// again when the slideshow moves on to the next image.
+	key(content.backdrop) {
+		ZoomBox(
+			initialValue = 1f,
+			targetValue = 1.1f,
+			delayMillis = 1_000,
+			durationMillis = 30_000,
+		) {
+			Image(
+				bitmap = content.backdrop.asImageBitmap(),
+				contentDescription = null,
+				alignment = Alignment.Center,
+				contentScale = ContentScale.Crop,
+				modifier = Modifier.fillMaxSize()
+			)
 
-		// Image vignette
-		DreamContentVignette()
+			// Image vignette
+			DreamContentVignette()
+		}
 	}
 
 	// Overlay

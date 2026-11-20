@@ -193,17 +193,22 @@ fun LyricsDtoBox(
 	val lyrics = lyricDto.lyrics
 	val isTimed = lyrics.firstOrNull()?.start != null
 	if (isTimed) {
+		// The box recomposes every second while the song is playing. Building the
+		// list again every time allocates a new object for every line and makes
+		// the whole column of lyrics measure itself again.
+		val timedLines = remember(lyrics) {
+			lyrics.map { TimedLine(it.start?.ticks ?: Duration.ZERO, it.text) }
+		}
 		LyricsBox(
-			lines = lyrics.map {
-				TimedLine(it.start?.ticks ?: Duration.ZERO, it.text)
-			},
+			lines = timedLines,
 			currentTimestamp = currentTimestamp,
 			fontSize = fontSize,
 			color = color,
 		)
 	} else {
+		val plainLines = remember(lyrics) { lyrics.map { it.text } }
 		LyricsBox(
-			lines = lyrics.map { it.text },
+			lines = plainLines,
 			currentTimestamp = currentTimestamp,
 			duration = duration,
 			paused = paused,

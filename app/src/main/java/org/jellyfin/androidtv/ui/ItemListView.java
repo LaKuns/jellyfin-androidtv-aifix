@@ -38,6 +38,28 @@ public class ItemListView extends RecyclerView {
      */
     private static final int LOAD_MORE_THRESHOLD = 10;
 
+    /**
+     * Time the focus has to settle before the focused row is centred.
+     *
+     * Centring the row on every focus change restarts the scroll that is already
+     * running, which makes holding a direction key jitter instead of scroll.
+     */
+    private static final long CENTER_DELAY_MS = 150L;
+
+    private int mPendingCenterPosition = RecyclerView.NO_POSITION;
+
+    private final Runnable mCenterRowRunnable = new Runnable() {
+        @Override
+        public void run() {
+            int position = mPendingCenterPosition;
+            mPendingCenterPosition = RecyclerView.NO_POSITION;
+            if (position == RecyclerView.NO_POSITION) return;
+            if (getAdapter() == null || position >= getAdapter().getItemCount()) return;
+
+            scrollRowToCenter(position);
+        }
+    };
+
     @Nullable
     private OnLoadMoreListener mLoadMoreListener;
     private boolean mLoadingMore;
@@ -163,11 +185,20 @@ public class ItemListView extends RecyclerView {
      * Keep the focused row visually centred. The previous implementation used
      * {@code ScrollView.smoothScrollBy} against absolute screen coordinates, which a
      * RecyclerView cannot provide; a smooth scroller that centres its target replaces it.
+     *
+     * The scroll is started once the focus has settled, because starting it on every
+     * focus change cancels the scroll that is already running.
      */
     public void centerRow(ItemRowView row) {
         int position = row == null ? RecyclerView.NO_POSITION : getChildAdapterPosition(row);
         if (position == RecyclerView.NO_POSITION) return;
 
+        mPendingCenterPosition = position;
+        removeCallbacks(mCenterRowRunnable);
+        postDelayed(mCenterRowRunnable, CENTER_DELAY_MS);
+    }
+
+    private void scrollRowToCenter(int position) {
         LinearSmoothScroller scroller = new LinearSmoothScroller(getContext()) {
             @Override
             public int calculateDyToMakeVisible(View view, int snapPref) {

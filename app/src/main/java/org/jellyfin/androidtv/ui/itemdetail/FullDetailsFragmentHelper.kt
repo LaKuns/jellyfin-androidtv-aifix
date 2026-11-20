@@ -357,9 +357,14 @@ private suspend fun FullDetailsFragment.loadEpisodePage(
 }
 
 suspend fun FullDetailsFragment.getNextUpEpisode(): BaseItemDto? {
+	// Several parts of the detail screen ask for the next up episode: the button,
+	// the episode selector and the resume action. The answer is kept, so that
+	// opening the screen does not ask the server for the same episode again.
+	if (mNextUpEpisodeLoaded) return mNextUpEpisode
+
 	val api by inject<ApiClient>()
 
-	try {
+	val episode = try {
 		val episodes = withContext(Dispatchers.IO) {
 			api.tvShowsApi.getNextUp(
 				seriesId = mBaseItem.seriesId ?: mBaseItem.id,
@@ -367,11 +372,15 @@ suspend fun FullDetailsFragment.getNextUpEpisode(): BaseItemDto? {
 				limit = 1,
 			).content
 		}
-		return episodes.items.firstOrNull()
+		episodes.items.firstOrNull()
 	} catch (err: ApiClientException) {
 		Timber.w(err, "Failed to get next up items")
-		return null
+		null
 	}
+
+	mNextUpEpisode = episode
+	mNextUpEpisodeLoaded = true
+	return episode
 }
 
 fun FullDetailsFragment.resumePlayback(v: View) {
