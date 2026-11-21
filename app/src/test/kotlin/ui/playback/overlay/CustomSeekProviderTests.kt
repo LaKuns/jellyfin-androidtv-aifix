@@ -121,7 +121,9 @@ class CustomSeekProviderTests : FunSpec({
 		}
 		val customSeekProvider = CustomSeekProvider(videoPlayerAdapter, mockk(), mockk(), mockk(), 10_000)
 
-		customSeekProvider.seekPositions shouldBe longArrayOf(0)
+		// A stream without duration (a live broadcast for one) has no position to seek to,
+		// so the provider offers no positions instead of a single one at the start.
+		customSeekProvider.seekPositions shouldBe longArrayOf()
 	}
 })
 
