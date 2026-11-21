@@ -125,13 +125,17 @@ public class VideoManager {
         nightModeEnabled = userPreferences.get(UserPreferences.Companion.getAudioNightMode());
 
         boolean assDirectPlay = userPreferences.get(UserPreferences.Companion.getAssDirectPlay());
-        // The subtitle overlay is rendered at the size of the video frame unless it is limited,
-        // and a 4K frame needs four times the memory of a 1080p one. The overlay is drawn on a
-        // 1080p view either way, so a 4K render wastes memory that the application heap of a TV
-        // box does not have: the heap of this device is 128 MB and a 4K overlay filled it within
-        // a few seconds, which ended the playback with an OutOfMemoryError.
+        // The overlay mode paints a new picture of the whole frame for every displayed frame,
+        // twenty-four times a second. A picture is a large object, so it is only reclaimed by a
+        // full garbage collection, and the heap of a TV box is far too small for that stream of
+        // allocations: at 4K the heap of this device (128 MB) was full five seconds after the
+        // playback started and the process was killed by the runtime a minute later.
+        //
+        // The cue mode renders every subtitle once, when it is parsed, and the player draws the
+        // resulting picture while the subtitle is on screen. The memory it needs follows the
+        // number of subtitles and not the number of frames, which is what a television needs.
         AssHandler assHandler = assDirectPlay
-                ? new AssHandler(AssRenderType.OVERLAY_OPEN_GL, new AssHandlerConfig(10_000, 128, 1920 * 1080))
+                ? new AssHandler(AssRenderType.CUES, new AssHandlerConfig(10_000, 128, 1920 * 1080))
                 : null;
 
         mExoPlayer = configureExoplayerBuilder(activity, assHandler).build();
@@ -188,7 +192,11 @@ public class VideoManager {
 
         if (assHandler != null) {
             assHandler.init(mExoPlayer);
-            mExoPlayerView.getSubtitleView().addView(new AssSubtitleView(mActivity, assHandler));
+            // The overlay modes draw on a view of their own. A cue is drawn by the subtitle view
+            // of the player, so the extra view would only cover the picture with an empty layer.
+            if (assHandler.getRenderType() != AssRenderType.CUES) {
+                mExoPlayerView.getSubtitleView().addView(new AssSubtitleView(mActivity, assHandler));
+            }
         }
 
         mExoPlayer.addListener(new Player.Listener() {
