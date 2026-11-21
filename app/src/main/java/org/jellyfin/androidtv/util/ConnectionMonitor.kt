@@ -87,6 +87,37 @@ object ConnectionMonitor {
 
 	private var started = false
 
+	/** Context and client of the monitor, kept to measure again after a playback. */
+	private var appContext: Context? = null
+	private var apiClient: ApiClient? = null
+
+	/**
+	 * Whether a playback is running.
+	 *
+	 * The measurement downloads several megabytes, which competes with the stream for the same
+	 * connection. A playback that starts while a measurement runs would be slowed down by it,
+	 * so no measurement is started while a playback is running. A connection that changes
+	 * during the playback is measured when the playback ends.
+	 */
+	@Volatile
+	private var playbackActive = false
+
+	/**
+	 * Tells the monitor whether a playback is running.
+	 */
+	fun setPlaybackActive(active: Boolean) {
+		if (playbackActive == active) return
+		playbackActive = active
+
+		if (active) return
+
+		// The connection can have changed while the playback was running, and the
+		// measurement of it was skipped.
+		val context = appContext ?: return
+		val api = apiClient ?: return
+		scope.launch { measure(context, api) }
+	}
+
 	/**
 	 * Starts the monitor and measures the connection that is in use.
 	 *
@@ -96,6 +127,8 @@ object ConnectionMonitor {
 	 */
 	fun start(context: Context, api: ApiClient): Job {
 		val appContext = context.applicationContext
+		this.appContext = appContext
+		this.apiClient = api
 		val measurement = scope.launch { measure(appContext, api) }
 
 		if (started) return measurement
@@ -160,6 +193,12 @@ object ConnectionMonitor {
 	 * either, because they describe a connection that is not in use anymore.
 	 */
 	private suspend fun measure(context: Context, api: ApiClient) = measurementLock.withLock {
+		// A measurement competes with a running stream for the connection.
+		if (playbackActive) {
+			Timber.i("Skipping the measurement of the connection while a playback is running")
+			return@withLock
+		}
+
 		val identity = NetworkIdentity.current(context)
 		if (identity.isEmpty()) return@withLock
 

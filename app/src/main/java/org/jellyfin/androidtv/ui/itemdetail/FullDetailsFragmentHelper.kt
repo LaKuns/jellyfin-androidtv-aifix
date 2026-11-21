@@ -372,8 +372,10 @@ suspend fun FullDetailsFragment.getNextUpEpisode(): BaseItemDto? {
 		}
 		episodes.items.firstOrNull()
 	} catch (err: ApiClientException) {
+		// A failed request says nothing about the next episode, so the answer is not kept:
+		// the next caller asks the server again.
 		Timber.w(err, "Failed to get next up items")
-		null
+		return null
 	}
 
 	mNextUpEpisode = episode

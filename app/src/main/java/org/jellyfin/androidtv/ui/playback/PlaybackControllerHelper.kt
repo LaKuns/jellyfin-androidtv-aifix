@@ -65,7 +65,7 @@ fun PlaybackController.setSubtitleIndex(index: Int, force: Boolean = false) {
 		// Use empty string to indicate "subtitles explicitly disabled" vs null meaning "no preference"
 		videoQueueManager.setLastPlayedSubtitleLanguageIsoCode("")
 	} else {
-		val stream = currentMediaSource.mediaStreams?.firstOrNull { it.type == MediaStreamType.SUBTITLE && it.index == index }
+		val stream = currentMediaSource?.mediaStreams?.firstOrNull { it.type == MediaStreamType.SUBTITLE && it.index == index }
 		videoQueueManager.setLastPlayedSubtitleLanguageIsoCode(stream?.language)
 	}
 
@@ -92,8 +92,7 @@ fun PlaybackController.setSubtitleIndex(index: Int, force: Boolean = false) {
 		mCurrentOptions.subtitleStreamIndex = index
 		play(mCurrentPosition, index)
 	} else {
-		val mediaSource = currentMediaSource
-		val stream = mediaSource.mediaStreams?.firstOrNull { it.type == MediaStreamType.SUBTITLE && it.index == index }
+		val stream = currentMediaSource?.mediaStreams?.firstOrNull { it.type == MediaStreamType.SUBTITLE && it.index == index }
 		if (stream == null) {
 			Timber.w("Failed to find correct media stream")
 			return setSubtitleIndex(-1)
@@ -122,7 +121,7 @@ fun PlaybackController.setSubtitleIndex(index: Int, force: Boolean = false) {
 					}
 				} else {
 					// The server does not send a reliable index in all cases, so calculate it manually
-					val localIndex = mediaSource.mediaStreams.orEmpty()
+					val localIndex = currentMediaSource?.mediaStreams.orEmpty()
 						.filter { it.type == MediaStreamType.SUBTITLE }
 						.filter {
 							if (stream.deliveryMethod == SubtitleDeliveryMethod.EMBED) {

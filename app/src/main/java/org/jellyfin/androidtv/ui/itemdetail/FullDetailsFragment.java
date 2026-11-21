@@ -267,6 +267,12 @@ public class FullDetailsFragment extends Fragment implements RecordingIndicatorV
             public void run() {
                 if (!getLifecycle().getCurrentState().isAtLeast(Lifecycle.State.STARTED)) return;
 
+                // The next up episode depends on the progress of the series, which changes while
+                // an episode is played. The answer of the screen that was left before the
+                // playback is therefore not used anymore.
+                mNextUpEpisode = null;
+                mNextUpEpisodeLoaded = false;
+
                 Instant lastPlaybackTime = dataRefreshService.getValue().getLastPlayback();
                 Timber.d("current time %s last playback event time %s last refresh time %s", Instant.now().toEpochMilli(), lastPlaybackTime, mLastUpdated.toEpochMilli());
 

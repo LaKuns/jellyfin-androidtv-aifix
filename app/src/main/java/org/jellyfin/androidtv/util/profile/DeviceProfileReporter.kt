@@ -1,6 +1,8 @@
 package org.jellyfin.androidtv.util.profile
 
 import android.content.Context
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.jellyfin.androidtv.preference.UserPreferences
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.client.extensions.clientLogApi
@@ -28,7 +30,11 @@ object DeviceProfileReporter {
 		reported = true
 
 		runCatching {
-			val report = createDeviceProfileReport(context, userPreferences, serverVersion)
+			// Building the report probes the decoders, which can take a moment on the first
+			// run. It must not block the caller, which is the main thread at app start.
+			val report = withContext(Dispatchers.IO) {
+				createDeviceProfileReport(context, userPreferences, serverVersion)
+			}
 			api.clientLogApi.logFile(report)
 		}.onSuccess {
 			Timber.i("Reported the device capabilities to the server")

@@ -534,7 +534,12 @@ public class VideoManager {
         try {
             // Add external subtitles
             List<MediaItem.SubtitleConfiguration> subtitleConfigurations = new ArrayList<>();
-            for (MediaStream mediaStream : streamInfo.getMediaSource().getMediaStreams()) {
+            List<MediaStream> mediaStreams = streamInfo.getMediaSource() == null ? null : streamInfo.getMediaSource().getMediaStreams();
+            if (mediaStreams == null) {
+                Timber.w("Playback info has no media streams - the subtitles cannot be added");
+                mediaStreams = Collections.emptyList();
+            }
+            for (MediaStream mediaStream : mediaStreams) {
                 if (mediaStream.getType() != MediaStreamType.SUBTITLE) continue;
 
                 if (mediaStream.getDeliveryMethod() == SubtitleDeliveryMethod.EXTERNAL) {
@@ -741,6 +746,7 @@ public class VideoManager {
         mPlaybackControllerNotifiable = null;
         stopPlayback();
         releasePlayer();
+        VideoManagerHelperKt.releaseAudioBoost();
     }
 
     private void releasePlayer() {

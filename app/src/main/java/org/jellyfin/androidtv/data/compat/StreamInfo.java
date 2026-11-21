@@ -7,6 +7,7 @@ import org.jellyfin.sdk.model.api.PlayMethod;
 import org.jellyfin.sdk.model.api.SubtitleDeliveryMethod;
 
 import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 public class StreamInfo {
@@ -71,9 +72,18 @@ public class StreamInfo {
     }
 
     public final org.jellyfin.sdk.model.api.SubtitleDeliveryMethod getSubtitleDeliveryMethod() {
+        if (MediaSource == null) return SubtitleDeliveryMethod.DROP;
         Integer subtitleStreamIndex = MediaSource.getDefaultSubtitleStreamIndex();
         if (subtitleStreamIndex == null || subtitleStreamIndex == -1) return SubtitleDeliveryMethod.DROP;
-        return MediaSource.getMediaStreams().get(subtitleStreamIndex).getDeliveryMethod();
+        List<org.jellyfin.sdk.model.api.MediaStream> streams = MediaSource.getMediaStreams();
+        if (streams == null) return SubtitleDeliveryMethod.DROP;
+        // The index of a stream is not guaranteed to be its position in the list, so it is
+        // looked up by the index that the server reported first.
+        for (org.jellyfin.sdk.model.api.MediaStream stream : streams) {
+            if (stream.getIndex() == subtitleStreamIndex) return stream.getDeliveryMethod();
+        }
+        if (subtitleStreamIndex < 0 || subtitleStreamIndex >= streams.size()) return SubtitleDeliveryMethod.DROP;
+        return streams.get(subtitleStreamIndex).getDeliveryMethod();
     }
 
     private String PlaySessionId;
@@ -96,6 +106,8 @@ public class StreamInfo {
 
     public final ArrayList<org.jellyfin.sdk.model.api.MediaStream> getSelectableStreams(MediaStreamType type) {
         ArrayList<org.jellyfin.sdk.model.api.MediaStream> list = new ArrayList<org.jellyfin.sdk.model.api.MediaStream>();
+
+        if (getMediaSource() == null || getMediaSource().getMediaStreams() == null) return list;
 
         for (org.jellyfin.sdk.model.api.MediaStream stream : getMediaSource().getMediaStreams()) {
             if (type == stream.getType()) {

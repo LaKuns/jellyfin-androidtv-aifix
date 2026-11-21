@@ -27,6 +27,7 @@ import org.jellyfin.androidtv.preference.constant.StillWatchingBehavior;
 import org.jellyfin.androidtv.preference.constant.ZoomMode;
 import org.jellyfin.androidtv.ui.InteractionTrackerViewModel;
 import org.jellyfin.androidtv.ui.livetv.TvManager;
+import org.jellyfin.androidtv.util.ConnectionMonitor;
 import org.jellyfin.androidtv.util.TimeUtils;
 import org.jellyfin.androidtv.util.Utils;
 import org.jellyfin.androidtv.util.apiclient.ReportingHelper;
@@ -211,6 +212,9 @@ public class PlaybackController implements PlaybackControllerNotifiable {
             return mCurrentStreamInfo.getMediaSource();
         } else {
             BaseItemDto item = getCurrentlyPlayingItem();
+            if (item == null) {
+                return null;
+            }
             List<MediaSourceInfo> mediaSources = item.getMediaSources();
 
             if (mediaSources == null || mediaSources.isEmpty()) {
@@ -576,7 +580,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
             internalOptions.setSubtitleStreamIndex(forcedSubtitleIndex);
         }
         MediaSourceInfo currentMediaSource = getCurrentMediaSource();
-        if (forcedAudioLanguage != null) {
+        if (forcedAudioLanguage != null && currentMediaSource != null && currentMediaSource.getMediaStreams() != null) {
             // find the first audio stream with the requested language
             for (MediaStream stream : currentMediaSource.getMediaStreams()) {
                 if (stream.getType() == MediaStreamType.AUDIO && forcedAudioLanguage.equals(stream.getLanguage())) {
@@ -760,11 +764,19 @@ public class PlaybackController implements PlaybackControllerNotifiable {
 
         mStartPosition = position;
         mCurrentStreamInfo = response;
-        mCurrentOptions.setMediaSourceId(response.getMediaSource().getId());
+        MediaSourceInfo startMediaSource = response.getMediaSource();
+        if (startMediaSource == null) {
+            // A media source is required to describe the later playback. Without it the
+            // playback would fail at the first access to the streams, so it is reported here.
+            Timber.w("Playback info has no media source - aborting playback");
+            handlePlaybackInfoError(null);
+            return;
+        }
+        mCurrentOptions.setMediaSourceId(startMediaSource.getId());
 
         if (response.getMediaUrl() == null) {
             // If baking subtitles doesn't work (e.g. no permissions to transcode), disable them
-            if (response.getSubtitleDeliveryMethod() == SubtitleDeliveryMethod.ENCODE && (response.getMediaSource().getDefaultSubtitleStreamIndex() == null || response.getMediaSource().getDefaultSubtitleStreamIndex() != -1)) {
+            if (response.getSubtitleDeliveryMethod() == SubtitleDeliveryMethod.ENCODE && (startMediaSource.getDefaultSubtitleStreamIndex() == null || startMediaSource.getDefaultSubtitleStreamIndex() != -1)) {
                 burningSubs = false;
                 stop();
                 play(position, -1);
@@ -905,16 +917,19 @@ public class PlaybackController implements PlaybackControllerNotifiable {
         // Otherwise, query the players
         if (mCurrentOptions.getAudioStreamIndex() != null) {
             currIndex = mCurrentOptions.getAudioStreamIndex();
-        } else if (isTranscoding() && getCurrentMediaSource().getDefaultAudioStreamIndex() != null) {
+        } else if (isTranscoding() && getCurrentMediaSource() != null && getCurrentMediaSource().getDefaultAudioStreamIndex() != null) {
             currIndex = getCurrentMediaSource().getDefaultAudioStreamIndex();
         } else if (hasInitializedVideoManager() && !isTranscoding()) {
-            currIndex = mVideoManager.getExoPlayerTrack(MediaStreamType.AUDIO, getCurrentlyPlayingItem().getMediaStreams());
+            BaseItemDto item = getCurrentlyPlayingItem();
+            if (item == null)
+                return -1;
+            currIndex = mVideoManager.getExoPlayerTrack(MediaStreamType.AUDIO, item.getMediaStreams());
         }
         return currIndex;
     }
 
     private Integer bestGuessAudioTrack(MediaSourceInfo info) {
-        if (info == null)
+        if (info == null || info.getMediaStreams() == null)
             return null;
 
         boolean videoFound = false;
@@ -930,7 +945,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
     }
 
     private Integer lastChosenLanguageAudioTrack(MediaSourceInfo info) {
-        if (info == null)
+        if (info == null || info.getMediaStreams() == null)
             return null;
 
         boolean videoFound = false;
@@ -952,9 +967,13 @@ public class PlaybackController implements PlaybackControllerNotifiable {
         if (mDefaultAudioIndex != -1)
             return;
 
-        Integer lastChosenLanguage = lastChosenLanguageAudioTrack(info.getMediaSource());
-        Integer remoteDefault = info.getMediaSource().getDefaultAudioStreamIndex();
-        Integer bestGuess = bestGuessAudioTrack(info.getMediaSource());
+        MediaSourceInfo source = info.getMediaSource();
+        if (source == null)
+            return;
+
+        Integer lastChosenLanguage = lastChosenLanguageAudioTrack(source);
+        Integer remoteDefault = source.getDefaultAudioStreamIndex();
+        Integer bestGuess = bestGuessAudioTrack(source);
 
         if (lastChosenLanguage != null)
             mDefaultAudioIndex = lastChosenLanguage;
@@ -1047,6 +1066,9 @@ public class PlaybackController implements PlaybackControllerNotifiable {
     }
 
     public void stop() {
+        // The connection can be measured again now that no stream uses it.
+        ConnectionMonitor.INSTANCE.setPlaybackActive(false);
+
         refreshCurrentPosition();
         Timber.i("stop called at %s", mCurrentPosition);
         cancelInitialSeek();
@@ -1436,6 +1458,9 @@ public class PlaybackController implements PlaybackControllerNotifiable {
 
     @Override
     public void onPrepared() {
+        // The connection is not measured while a playback is running, see ConnectionMonitor.
+        ConnectionMonitor.INSTANCE.setPlaybackActive(true);
+
         if (mPlaybackState == PlaybackState.BUFFERING) {
             if (mFragment != null) {
                 mFragment.setFadingEnabled(true);
@@ -1467,10 +1492,11 @@ public class PlaybackController implements PlaybackControllerNotifiable {
 
             // if track switching is done without rebuilding the stream, mCurrentOptions is updated
             // otherwise, use the server default
+            MediaSourceInfo currentSource = getCurrentMediaSource();
             if (mCurrentOptions.getAudioStreamIndex() != null) {
                 eligibleAudioTrack = mCurrentOptions.getAudioStreamIndex();
-            } else if (getCurrentMediaSource().getDefaultAudioStreamIndex() != null) {
-                eligibleAudioTrack = getCurrentMediaSource().getDefaultAudioStreamIndex();
+            } else if (currentSource != null && currentSource.getDefaultAudioStreamIndex() != null) {
+                eligibleAudioTrack = currentSource.getDefaultAudioStreamIndex();
             }
             switchAudioStream(eligibleAudioTrack);
         }
@@ -1478,6 +1504,9 @@ public class PlaybackController implements PlaybackControllerNotifiable {
 
     @Override
     public void onError() {
+        // A playback that fails does not measure the connection either.
+        ConnectionMonitor.INSTANCE.setPlaybackActive(false);
+
         if (mFragment == null) {
             playerErrorEncountered();
             return;
@@ -1635,6 +1664,17 @@ public class PlaybackController implements PlaybackControllerNotifiable {
     }
 
     /**
+     * The marks of a simplified chinese subtitle in its title.
+     *
+     * A plain "GB" or "CHS" is matched only as a word of its own: the letters appear in the
+     * names of many other releases as well, and a subtitle that is in another language must
+     * not be chosen because of them.
+     */
+    private static final java.util.regex.Pattern SIMPLIFIED_CHINESE_TITLE = java.util.regex.Pattern.compile(
+            "简体|简中|GBK|(?<![A-Za-z])GB(?![A-Za-z])|(?<![A-Za-z])CHS(?![A-Za-z])",
+            java.util.regex.Pattern.CASE_INSENSITIVE);
+
+    /**
      * Whether the subtitle is in simplified chinese.
      *
      * The language of a subtitle stream is an ISO 639-2 code and the code of
@@ -1643,16 +1683,24 @@ public class PlaybackController implements PlaybackControllerNotifiable {
      * code does not tell it.
      */
     private static boolean isSimplifiedChinese(@Nullable String language, String title) {
-        if (language != null) {
+        if (language != null && !language.isEmpty()) {
             String code = language.toLowerCase(Locale.ROOT);
+
             if (code.equals("chi") || code.equals("hans") || code.equals("cmn")
                     || code.equals("zh") || code.startsWith("zh-cn") || code.startsWith("zh-hans")
                     || code.equals("zh-sg")) {
                 return true;
             }
+
+            // A subtitle that is named as traditional chinese is not simplified, even when
+            // the title of the release mentions the simplified variant.
+            if (code.equals("hant") || code.equals("cht") || code.equals("yue")
+                    || code.startsWith("zh-tw") || code.startsWith("zh-hk") || code.startsWith("zh-hant")) {
+                return false;
+            }
         }
 
-        return title.contains("简体") || title.contains("简中") || title.contains("CHS") || title.contains("GB");
+        return title != null && SIMPLIFIED_CHINESE_TITLE.matcher(title).find();
     }
 
     /**

@@ -227,13 +227,13 @@ fun createDeviceProfile(
 	val supportsAV1 = mediaTest.supportsAV1()
 	val supportsAV1Main10 = mediaTest.supportsAV1Main10()
 	val supportsVC1 = mediaTest.supportsVc1()
-	// VP8, VP9 and MPEG-4 part 2 are decoded in hardware by only a few of the
-	// TV chips. A stream that the device can only decode in software is played
-	// by the server instead, because a software decoder is much too slow for the
-	// picture on a box with four small cores.
+	// VP8, VP9 and MPEG-1/2 are decoded in hardware by only a few of the TV
+	// chips, but their pictures are small enough for a software decoder. A
+	// stream that has no decoder at all is the only one that is played by the
+	// server, so the probe asks for any decoder and not only a hardware one.
 	val supportsVP8 = mediaTest.supportsVP8()
 	val supportsVP9 = mediaTest.supportsVP9()
-	val supportsMPEG4 = mediaTest.supportsMPEG4()
+	val supportsMpeg2 = mediaTest.supportsMpeg2()
 	val maxResolutionAVC = mediaTest.getMaxResolution(MimeTypes.VIDEO_H264).limitTo(maxVideoWidth, maxVideoHeight)
 	val maxResolutionHevc = mediaTest.getMaxResolution(MimeTypes.VIDEO_H265).limitTo(maxVideoWidth, maxVideoHeight)
 	val maxResolutionAV1 = mediaTest.getMaxResolution(MimeTypes.VIDEO_AV1).limitTo(maxVideoWidth, maxVideoHeight)
@@ -339,7 +339,7 @@ fun createDeviceProfile(
 			Codec.Video.MPEG2VIDEO,
 			Codec.Video.VC1,
 		)
-		if (supportsMPEG4) videoCodec(Codec.Video.MPEG)
+		if (supportsMpeg2) videoCodec(Codec.Video.MPEG)
 		if (supportsVP8) videoCodec(Codec.Video.VP8)
 		if (supportsVP9) videoCodec(Codec.Video.VP9)
 
@@ -539,7 +539,7 @@ fun createDeviceProfile(
 
 		conditions {
 			when {
-				!supportsMPEG4 -> ProfileConditionValue.VIDEO_PROFILE equals "none"
+				!supportsMpeg2 -> ProfileConditionValue.VIDEO_PROFILE equals "none"
 				else -> ProfileConditionValue.VIDEO_PROFILE notEquals "none"
 			}
 		}
@@ -626,8 +626,11 @@ fun createDeviceProfile(
 	val av1Hdr10Plus = supportsAV1Main10 && (supportsAV1HDR10Plus || displayHdr.supportsHdr10Plus)
 	val hevcHdr10Plus = supportsHevcMain10 && (supportsHevcHDR10Plus || displayHdr.supportsHdr10Plus)
 
-	// HLG is a property of the television as much as of the decoder.
-	val hevcHlg = supportsHevcMain10 && displayHdr.supportsHlg
+	// HLG is a property of the television as much as of the decoder. A display that reports no
+	// HDR at all is a case of a display that is not asked, because the box usually passes the
+	// signal through and the television does the tone mapping; only a display that reports HDR
+	// but not HLG is known to be unable to show the transfer function.
+	val hevcHlg = supportsHevcMain10 && (displayHdr.supportsHlg || !displayHdr.supportsHdr)
 
 	val unsupportedRangeTypesAv1 = buildSet {
 		add(VideoRangeType.DOVI_INVALID)
@@ -781,7 +784,11 @@ data class DisplayHdrCapabilities(
 	val supportsHdr10: Boolean = false,
 	val supportsHdr10Plus: Boolean = false,
 	val supportsHlg: Boolean = false,
-)
+) {
+	/** Whether the display reports any kind of HDR support at all. */
+	val supportsHdr: Boolean
+		get() = supportsHdr10 || supportsHdr10Plus || supportsHlg
+}
 
 private fun getDisplayHdrCapabilities(context: Context): DisplayHdrCapabilities {
 	if (!AndroidVersion.isAtLeastN) return DisplayHdrCapabilities()

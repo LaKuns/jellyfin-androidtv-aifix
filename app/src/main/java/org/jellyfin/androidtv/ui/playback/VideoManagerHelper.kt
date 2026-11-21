@@ -57,6 +57,19 @@ fun applyAudioBoost(audioSessionId: Int, millibels: Int) {
 	}.getOrNull()
 }
 
+/**
+ * Releases the audio boost.
+ *
+ * The effect is attached to the audio session of the player, which ends with the playback.
+ * The effect has to be released with it, otherwise the audio framework keeps it alive.
+ */
+fun releaseAudioBoost() {
+	if (audioBoost == null) return
+
+	audioBoost?.release()
+	audioBoost = null
+}
+
 fun applyAudioNightmode(audioSessionId: Int) {
 	Timber.i("Enabling audio night mode for session $audioSessionId")
 

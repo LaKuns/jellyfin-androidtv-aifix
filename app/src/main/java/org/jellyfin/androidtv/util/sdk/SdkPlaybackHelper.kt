@@ -235,7 +235,16 @@ class SdkPlaybackHelper(
 				val addIntros = allowIntros && userPreferences[UserPreferences.cinemaModeEnabled]
 
 				if (addIntros) {
-					val intros = runCatching { api.userLibraryApi.getIntros(mainItem.id).content.items }.getOrNull()
+					// The library api returns the intros without their media sources, which the
+					// playback needs, so the items are requested again with the fields.
+					val intros = runCatching {
+						val introIds = api.userLibraryApi.getIntros(mainItem.id).content.items.map { it.id }
+						if (introIds.isEmpty()) {
+							emptyList()
+						} else {
+							api.itemsApi.getItems(ids = introIds, fields = ItemRepository.itemFields).content.items
+						}
+					}.getOrNull()
 						.orEmpty()
 						// Force the type to be trailer as the legacy playback UI uses it to determine if it should show the next up screen
 						.map { it.copy(type = BaseItemKind.TRAILER) }
@@ -294,8 +303,14 @@ class SdkPlaybackHelper(
 			val items = withContext(Dispatchers.IO) {
 				val response by api.itemsApi.getItems(
 					ids = itemIds,
+					fields = ItemRepository.itemFields,
 				)
 				response.items
+			}
+
+			// A remote play command can name no item at all; there is nothing to play then.
+			if (items.isEmpty()) {
+				return@launch
 			}
 
 			val pos = position?.ticks ?: items[0].userData?.playbackPositionTicks?.ticks?.minus(

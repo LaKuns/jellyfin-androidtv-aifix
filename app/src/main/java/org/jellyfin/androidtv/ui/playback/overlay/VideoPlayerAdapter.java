@@ -146,17 +146,27 @@ public class VideoPlayerAdapter extends PlayerAdapter {
 
     boolean canRecordLiveTv() {
         org.jellyfin.sdk.model.api.BaseItemDto currentlyPlayingItem = getCurrentlyPlayingItem();
+        if (currentlyPlayingItem == null) {
+            return false;
+        }
         return currentlyPlayingItem.getCurrentProgram() != null
                 && Utils.canManageRecordings(KoinJavaComponent.<UserRepository>get(UserRepository.class).getCurrentUser().getValue());
     }
 
     public void toggleRecording() {
         org.jellyfin.sdk.model.api.BaseItemDto currentlyPlayingItem = getCurrentlyPlayingItem();
+        if (currentlyPlayingItem == null) {
+            return;
+        }
         getMasterOverlayFragment().toggleRecording(currentlyPlayingItem);
     }
 
     boolean isRecording() {
-        org.jellyfin.sdk.model.api.BaseItemDto currentProgram = getCurrentlyPlayingItem().getCurrentProgram();
+        org.jellyfin.sdk.model.api.BaseItemDto item = getCurrentlyPlayingItem();
+        if (item == null) {
+            return false;
+        }
+        org.jellyfin.sdk.model.api.BaseItemDto currentProgram = item.getCurrentProgram();
         if (currentProgram == null) {
             return false;
         } else {
@@ -174,6 +184,9 @@ public class VideoPlayerAdapter extends PlayerAdapter {
 
     boolean hasChapters() {
         org.jellyfin.sdk.model.api.BaseItemDto item = getCurrentlyPlayingItem();
+        if (item == null) {
+            return false;
+        }
         List<ChapterInfo> chapters = item.getChapters();
         return chapters != null && chapters.size() > 0;
     }

@@ -33,7 +33,10 @@ class CustomSeekProvider(
 	private var currentSeekPositions = LongArray(0)
 
 	private var cachedPlaceholderThumbnail: Bitmap? = null
-	private val maxActiveRequests = if (PerformanceProfile.isLowPerformanceDevice(context)) 2 else 4
+
+	// The remote configuration is only read when the thumbnails are requested: a seek provider
+	// is created for every playback and the settings are not part of the seek positions.
+	private val maxActiveRequests by lazy { if (PerformanceProfile.isLowPerformanceDevice(context)) 2 else 4 }
 
 	private companion object {
 		const val MAX_SEEK_POSITIONS = 4000

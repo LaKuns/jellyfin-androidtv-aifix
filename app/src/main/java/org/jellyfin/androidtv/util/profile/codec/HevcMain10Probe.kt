@@ -31,9 +31,12 @@ object HevcMain10Probe {
 	/**
 	 * The levels that are tried, highest first, with the value that ffprobe reports for it
 	 * (the level of ffprobe is the level of the codec multiplied by 30).
+	 *
+	 * Level 5.2 is deliberately not tried. A decoder that accepts the format when it is
+	 * configured has not decoded a frame yet, so the answer is evidence of the profile and
+	 * not of the speed: the highest level that is claimed is the one that a 4K stream needs.
 	 */
 	private val LEVELS = listOf(
-		CodecProfileLevel.HEVCMainTierLevel52 to 156,
 		CodecProfileLevel.HEVCMainTierLevel51 to 153,
 		CodecProfileLevel.HEVCMainTierLevel5 to 150,
 		CodecProfileLevel.HEVCMainTierLevel41 to 123,
@@ -42,6 +45,8 @@ object HevcMain10Probe {
 
 	@Volatile
 	private var cachedLevel: Int = UNSET
+
+	private var attempts: Int = 0
 
 	/**
 	 * Whether a hardware decoder of the device decodes Main 10.
@@ -58,7 +63,16 @@ object HevcMain10Probe {
 	@Synchronized
 	fun getLevel(): Int {
 		if (cachedLevel == UNSET) {
-			cachedLevel = probe()
+			val level = probe()
+			attempts++
+
+			// A decoder can be busy while another app is using the display, so a negative
+			// answer is only cached after it was confirmed a second time.
+			if (level > UNSUPPORTED || attempts >= 2) {
+				cachedLevel = level
+			}
+
+			return level
 		}
 
 		return cachedLevel

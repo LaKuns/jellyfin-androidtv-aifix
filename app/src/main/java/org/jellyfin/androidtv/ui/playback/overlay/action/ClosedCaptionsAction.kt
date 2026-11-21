@@ -44,7 +44,7 @@ class ClosedCaptionsAction(
 					isChecked = playbackController.subtitleStreamIndex == -1
 				}
 
-				for (sub in playbackController.currentMediaSource.mediaStreams.orEmpty()) {
+				for (sub in playbackController.currentMediaSource?.mediaStreams.orEmpty()) {
 					if (sub.type != MediaStreamType.SUBTITLE) continue
 
 					add(0, sub.index, order++, sub.displayTitle).apply {

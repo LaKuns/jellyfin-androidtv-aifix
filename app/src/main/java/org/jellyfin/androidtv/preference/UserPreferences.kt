@@ -420,6 +420,15 @@ class UserPreferences(context: Context) : SharedPreferenceStore(
 					if (backdropEnabled) BackdropBehavior.BACKDROP_WITH_BLUR.name else BackdropBehavior.DISABLED.name
 				)
 			}
+
+			migration(toVersion = 10) {
+				// The audio boost was a boolean of six decibels before the steps were offered.
+				// The key changed with the type, so the old answer is carried over.
+				if (it.contains("audio_boost") && it.getBoolean("audio_boost", false) && !it.contains("audio_boost_level")) {
+					putString("audio_boost_level", AudioBoost.PLUS_6.name)
+				}
+				remove("audio_boost")
+			}
 		}
 	}
 }
