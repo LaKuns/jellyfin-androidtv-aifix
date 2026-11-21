@@ -30,6 +30,16 @@ object PerformanceProfile {
 	private const val LOW_TOTAL_MEMORY_MB = 2048
 
 	/**
+	 * Physical memory up to which the flag of the system is believed.
+	 *
+	 * Some TV boxes are marked as a low RAM device although they have enough memory
+	 * for the application. The flag describes the state of the system, not the
+	 * capability of the device, so it is only used when the device really has
+	 * little memory.
+	 */
+	private const val LOW_RAM_DEVICE_MEMORY_MB = 3072
+
+	/**
 	 * CPU core count at or below which a device is treated as low performance.
 	 *
 	 * A modern quad core chip renders the interface without trouble, and the number of
@@ -159,10 +169,6 @@ object PerformanceProfile {
 		val appContext = context.applicationContext
 		val activityManager = appContext.getSystemService<ActivityManager>() ?: return ""
 
-		// The configuration of the device decides whether the system itself considers
-		// it to be short on memory.
-		if (activityManager.isLowRamDevice) return "the system reports a low RAM device"
-
 		// Only a device with very few cores is treated as low performance.
 		val cores = Runtime.getRuntime().availableProcessors()
 		if (cores <= LOW_CPU_CORE_COUNT) return "only $cores CPU cores"
@@ -172,6 +178,13 @@ object PerformanceProfile {
 		activityManager.getMemoryInfo(memoryInfo)
 		val totalMemoryMb = memoryInfo.totalMem / BYTES_PER_MB
 		if (totalMemoryMb <= LOW_TOTAL_MEMORY_MB) return "only $totalMemoryMb MB of memory"
+
+		// The flag of the system describes the state of the system and not the
+		// capability of the device. A box that has enough memory for the
+		// application is not treated as a low performance one because of it.
+		if (activityManager.isLowRamDevice && totalMemoryMb <= LOW_RAM_DEVICE_MEMORY_MB) {
+			return "the system reports a low RAM device"
+		}
 
 		return ""
 	}
