@@ -14,6 +14,7 @@ import kotlinx.serialization.json.Json
 import org.jellyfin.androidtv.BuildConfig
 import org.jellyfin.androidtv.constant.Codec
 import org.jellyfin.androidtv.preference.UserPreferences
+import org.jellyfin.androidtv.preference.constant.BitstreamAudioMode
 import org.jellyfin.androidtv.util.AndroidVersion
 import org.jellyfin.androidtv.util.PerformanceProfile
 import org.jellyfin.androidtv.util.appendCodeBlock
@@ -173,11 +174,54 @@ fun createDeviceProfileReport(
 		}
 	}
 
-	appendDetails("Audio passthrough capabilities") {
+	appendDetails("Audio passthrough capabilities (reported by the display)") {
 		appendLine("***AC3 (2.0)***: ${isPassthroughAudioAvailable(context, MimeTypes.AUDIO_AC3)}")
 		appendLine("***EAC3 (2.0)***: ${isPassthroughAudioAvailable(context, MimeTypes.AUDIO_E_AC3)}")
 		appendLine("***DTS (2.0)***: ${isPassthroughAudioAvailable(context, MimeTypes.AUDIO_DTS)}")
 		appendLine("***TrueHD (2.0)***: ${isPassthroughAudioAvailable(context, MimeTypes.AUDIO_TRUEHD)}")
+		appendLine()
+		appendLine(
+			"In the automatic mode a format is passed through when the device reports that its " +
+				"audio output supports it. A decoder is not needed for that: the track is handed " +
+				"to the television or the receiver unchanged."
+		)
+		appendLine()
+	}
+
+	// What the player finds on the device for every audio format, and what the profile does with
+	// it. The difference between "the device decodes it", "the device passes it through" and
+	// "the player has nothing for it" is what explains the audio of a failed playback.
+	appendDetails("Audio codec support") {
+		val mediaTest = MediaCodecCapabilitiesTest(userPreferences[UserPreferences.softwareCodecsEnabled])
+
+		for (codec in supportedAudioCodecs) {
+			val format = passthroughAudioFormats[codec]
+			val mode = format?.let { userPreferences[it.preference] }
+			val available = format?.let { isPassthroughAudioAvailable(context, it.mimeType) }
+			val declared = when (mode) {
+				BitstreamAudioMode.ENABLE -> true
+				BitstreamAudioMode.DISABLE -> false
+				BitstreamAudioMode.AUTO -> available == true
+				null -> true
+			}
+
+			appendLine(
+				buildString {
+					append("- **").append(codec).append("**: ")
+					append(if (declared) "declared" else "not declared")
+					mediaTest.hasAudioDecoder(codec)?.let {
+						append(", decoder: ").append(if (it) "yes" else "no")
+					}
+					if (mode != null) {
+						append(", passthrough: ").append(mode.name.lowercase())
+						append(" (available: ").append(if (available == true) "yes" else "no").append(")")
+					}
+					append(", hls ts: ").append(if (codec in hlsMpegTsAudioCodecs) "yes" else "no")
+					append(", hls fmp4: ").append(if (codec in hlsFmp4AudioCodecs) "yes" else "no")
+				}
+			)
+		}
+
 		appendLine()
 	}
 
@@ -318,6 +362,16 @@ fun createDeviceProfileReport(
 			val latency = PlaybackThroughput.getLinkLatency(context)
 			if (latency > 0) {
 				appendValue("$latency ms")
+			} else {
+				appendValue("not measured yet")
+			}
+		}
+		// A delay that the server needed to open the file is not a property of the
+		// connection. The budget limits it, so the value that is used there is shown too.
+		appendItem("Latency used for the link budget") {
+			val latency = PlaybackThroughput.getLinkLatency(context)
+			if (latency > 0) {
+				appendValue("${minOf(latency, PlaybackThroughput.MAX_LINK_LATENCY_MS)} ms")
 			} else {
 				appendValue("not measured yet")
 			}
