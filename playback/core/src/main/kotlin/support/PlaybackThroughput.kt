@@ -89,6 +89,20 @@ object PlaybackThroughput {
 	private const val MIN_BITRATE = 2_000_000
 
 	/**
+	 * The largest round trip time that is taken into account by the budget.
+	 *
+	 * A delay of more than a second between a request and the first byte of the answer is
+	 * not the round trip time of the connection. Opening a file on a mechanical disk of the
+	 * server takes about that long, and the player cannot tell that apart from the network:
+	 * both are simply "nothing arrives yet".
+	 *
+	 * A measurement that carries such a delay must not shrink the budget of every following
+	 * stream. The delay is limited to one second instead, which is still slow enough to
+	 * describe a weak connection and leaves the budget usable.
+	 */
+	const val MAX_LINK_LATENCY_MS = 1_000L
+
+	/**
 	 * Downloads below this size are dominated by request overhead and are ignored.
 	 */
 	private const val MIN_SAMPLE_BYTES = 64L * 1024
@@ -184,10 +198,23 @@ object PlaybackThroughput {
 		val link = getLinkBitrate(context)
 		if (link <= 0) return 0
 
-		val latencySeconds = getLinkLatency(context) / 1000.0
-		val usableFraction = ((SEGMENT_SECONDS - latencySeconds) / SEGMENT_SECONDS).coerceIn(0.1, 1.0)
+		return (link * usableFraction(getLinkLatency(context)) * LINK_SAFETY_FACTOR).toLong()
+	}
 
-		return (link * usableFraction * LINK_SAFETY_FACTOR).toLong()
+	/**
+	 * The part of a segment that is left for its download.
+	 *
+	 * A segment can only be downloaded while it is not being played back yet, so the round
+	 * trip time of the connection is lost between two segments. The delay is limited to
+	 * [MAX_LINK_LATENCY_MS]: a measurement of a server that was busy with its disk is not a
+	 * property of the connection.
+	 *
+	 * @param latencyMs The round trip time of the connection in milliseconds
+	 * @return The fraction of the segment length that is available for the download
+	 */
+	internal fun usableFraction(latencyMs: Long): Double {
+		val latencySeconds = minOf(latencyMs, MAX_LINK_LATENCY_MS) / 1000.0
+		return ((SEGMENT_SECONDS - latencySeconds) / SEGMENT_SECONDS).coerceIn(0.1, 1.0)
 	}
 
 	/**
@@ -262,7 +289,9 @@ object PlaybackThroughput {
 	 *
 	 * The connection is measured without decoding anything, so it reports what the
 	 * network is able to deliver. The margin compensates for the traffic that
-	 * competes with the stream and for the time between two segments.
+	 * competes with the stream and for the time between two segments. The delay of
+	 * the connection is part of that time, so the budget never exceeds
+	 * [getLinkSafeBitrate], which reserves it.
 	 *
 	 * @return The bitrate in bits per second or 0 when nothing is known yet
 	 */
@@ -270,7 +299,10 @@ object PlaybackThroughput {
 	fun getStreamBitrateLimit(context: Context): Int {
 		val link = getLinkBitrate(context)
 		if (link > 0) {
-			return (link * USABLE_FRACTION).toInt().coerceAtLeast(MIN_BITRATE)
+			val limit = (link * USABLE_FRACTION).toInt()
+			val safe = getLinkSafeBitrate(context).toInt()
+
+			return minOf(limit, safe).coerceAtLeast(MIN_BITRATE)
 		}
 
 		// The connection is unknown: it was never measured, or it was measured on
