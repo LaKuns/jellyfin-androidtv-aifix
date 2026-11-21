@@ -156,12 +156,15 @@ public class VideoManager {
             }
         });
 
-        // Volume normalisation (audio night mode).
-        if (nightModeEnabled) {
+        // Volume normalisation (audio night mode) and the level of the audio that is decoded here
+        // instead of being passed through to the television.
+        boolean audioBoost = userPreferences.get(UserPreferences.Companion.getAudioBoost());
+        if (nightModeEnabled || audioBoost) {
             mExoPlayer.addAnalyticsListener(new AnalyticsListener() {
                 @Override
                 public void onAudioSessionIdChanged(AnalyticsListener.EventTime eventTime, int audioSessionId) {
-                    VideoManagerHelperKt.applyAudioNightmode(audioSessionId);
+                    if (nightModeEnabled) VideoManagerHelperKt.applyAudioNightmode(audioSessionId);
+                    VideoManagerHelperKt.applyAudioBoost(audioSessionId, audioBoost);
                 }
             });
         }

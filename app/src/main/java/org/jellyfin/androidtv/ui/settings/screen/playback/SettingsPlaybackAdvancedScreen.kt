@@ -305,6 +305,18 @@ fun SettingsPlaybackAdvancedScreen() {
 		}
 
 		item {
+			var audioBoost by rememberPreference(userPreferences, UserPreferences.audioBoost)
+
+			ListButton(
+				headingContent = { Text(stringResource(R.string.pref_audio_boost)) },
+				captionContent = { Text(stringResource(R.string.pref_audio_boost_description)) },
+				trailingContent = { Checkbox(checked = audioBoost) },
+				onClick = { audioBoost = !audioBoost },
+				modifier = Modifier.focusKey("audio_boost")
+			)
+		}
+
+		item {
 			var preferExoPlayerFfmpeg by rememberPreference(userPreferences, UserPreferences.preferExoPlayerFfmpeg)
 			ListButton(
 				headingContent = { Text(stringResource(R.string.prefer_exoplayer_ffmpeg)) },

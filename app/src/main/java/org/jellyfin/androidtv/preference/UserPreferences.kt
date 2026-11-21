@@ -160,6 +160,16 @@ class UserPreferences(context: Context) : SharedPreferenceStore(
 		var audioNightMode = enumPreference("audio_night_mode", false)
 
 		/**
+		 * Raise the level of the audio that the device decodes itself.
+		 *
+		 * A track that the server has to transcode (because the device can only pass the format
+		 * through and its pass-through is not usable) is decoded to the level of the source, while
+		 * a television that decodes the same format itself applies its own level to the bitstream.
+		 * The difference is audible, so the decoded audio can be raised.
+		 */
+		var audioBoost = booleanPreference("audio_boost", false)
+
+		/**
 		 * AC3 bitstream device profile override.
 		 */
 		var bitstreamAc3 = enumPreference("bitstream_ac3_mode", BitstreamAudioMode.AUTO)

@@ -3,6 +3,7 @@ package org.jellyfin.androidtv.ui.playback
 import android.media.audiofx.AudioEffect
 import android.media.audiofx.DynamicsProcessing
 import android.media.audiofx.Equalizer
+import android.media.audiofx.LoudnessEnhancer
 import androidx.core.net.toUri
 import org.jellyfin.androidtv.util.AndroidVersion
 import org.jellyfin.playback.media3.exoplayer.mapping.getFfmpegSubtitleMimeType
@@ -24,6 +25,42 @@ fun getSubtitleMediaStreamCodec(stream: MediaStream): String {
 }
 
 private var audioEffect: AudioEffect? = null
+
+/**
+ * Raised level of the audio the device decodes itself, in millibels.
+ *
+ * A track that the server transcodes is decoded to the level of the source. A television that
+ * decodes the same track from a bitstream applies its own level on top of it, which makes the
+ * decoded audio sound quieter by several decibels at the same volume position. Six decibels
+ * close that gap.
+ *
+ * The level was measured on the material this is meant for: the film "给阿嬷的情书" has an
+ * integrated loudness of -23.1 LUFS and a true peak of -3.9 dBFS, so the gain moves the loudest
+ * moment of the film two decibels over full scale. The enhancer limits exactly those peaks and
+ * never clips a sample, which keeps the boost free of distortion; the rest of the film is raised
+ * without any processing at all.
+ */
+private const val AUDIO_BOOST_MILLIBELS = 6_000
+
+private var audioBoost: LoudnessEnhancer? = null
+
+fun applyAudioBoost(audioSessionId: Int, enabled: Boolean) {
+	Timber.i("Audio boost for session %s: %s", audioSessionId, enabled)
+
+	audioBoost?.release()
+	audioBoost = null
+
+	if (!enabled) return
+
+	audioBoost = runCatching {
+		LoudnessEnhancer(audioSessionId).apply {
+			setTargetGain(AUDIO_BOOST_MILLIBELS)
+			setEnabled(true)
+		}
+	}.onFailure {
+		Timber.w(it, "Unable to enable the audio boost")
+	}.getOrNull()
+}
 
 fun applyAudioNightmode(audioSessionId: Int) {
 	Timber.i("Enabling audio night mode for session $audioSessionId")
