@@ -456,8 +456,13 @@
     <string name="lbl_quality_profile">质量配置</string>
     <string name="desc_audio_night_mode">自动调平音量</string>
     <string name="pref_audio_night_mode">音频夜间模式（实验性）</string>
-    <string name="pref_audio_boost">解码音频增益 6 dB</string>
-    <string name="pref_audio_boost_description">提升由盒子自己解码的音频。关闭环绕声直通后，电视不再对它解码的码流施加自己的音量，同样的音量位置听起来会更轻。峰值会被限幅，不会削波失真。</string>
+    <string name="pref_audio_boost">解码音频增益</string>
+    <string name="pref_audio_boost_off">不提升</string>
+    <string name="pref_audio_boost_2">+2 dB</string>
+    <string name="pref_audio_boost_4">+4 dB</string>
+    <string name="pref_audio_boost_6">+6 dB</string>
+    <string name="pref_audio_boost_8">+8 dB</string>
+    <string name="pref_audio_boost_description">提升由盒子自己解码的音频。关闭环绕声直通后，电视不再对它解码的码流施加自己的音量，同样的音量位置听起来会更轻。+4 dB 以内是纯增益；更高时只对最响的瞬间限幅，不会削波。</string>
     <string name="app_notification_beta">应用已更新至 %1$s
 \n感谢您参与 Jellyfin 测试计划。</string>
     <string name="color_white">白色</string>

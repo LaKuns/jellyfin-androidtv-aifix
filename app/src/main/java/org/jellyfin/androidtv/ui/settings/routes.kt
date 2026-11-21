@@ -38,6 +38,7 @@ import org.jellyfin.androidtv.ui.settings.screen.livetv.SettingsLiveTvGuideOptio
 import org.jellyfin.androidtv.ui.settings.screen.playback.SettingsPlaybackAVCLevelScreen
 import org.jellyfin.androidtv.ui.settings.screen.playback.SettingsPlaybackAdvancedScreen
 import org.jellyfin.androidtv.ui.settings.screen.playback.SettingsPlaybackAudioBehaviorScreen
+import org.jellyfin.androidtv.ui.settings.screen.playback.SettingsPlaybackAudioBoostScreen
 import org.jellyfin.androidtv.ui.settings.screen.playback.SettingsPlaybackBitstreamAudioScreen
 import org.jellyfin.androidtv.ui.settings.screen.playback.SettingsPlaybackBufferLengthScreen
 import org.jellyfin.androidtv.ui.settings.screen.playback.SettingsPlaybackCodecScreen
@@ -115,6 +116,7 @@ object Routes {
 	const val PLAYBACK_HDR_OVERRIDES = "/playback/hdr-overrides"
 	const val PLAYBACK_HDR_OVERRIDE = "/playback/hdr-overrides/{format}"
 	const val PLAYBACK_AUDIO_BEHAVIOR = "/playback/audio-behavior"
+	const val PLAYBACK_AUDIO_BOOST = "/playback/audio-boost"
 	const val PLAYBACK_CODEC = "/playback/codec"
 	const val PLAYBACK_BITSTREAM_AUDIO = "/playback/codec/bitstream-audio/{format}"
 	const val PLAYBACK_AVC_LEVEL = "/playback/codec/avc-level"
@@ -291,6 +293,9 @@ val routes = mapOf<String, RouteComposable>(
 	},
 	Routes.PLAYBACK_AUDIO_BEHAVIOR to {
 		SettingsPlaybackAudioBehaviorScreen()
+	},
+	Routes.PLAYBACK_AUDIO_BOOST to {
+		SettingsPlaybackAudioBoostScreen()
 	},
 	Routes.PLAYBACK_CODEC to {
 		SettingsPlaybackCodecScreen()

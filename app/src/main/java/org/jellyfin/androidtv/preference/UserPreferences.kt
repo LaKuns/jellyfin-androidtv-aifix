@@ -6,6 +6,7 @@ import org.jellyfin.androidtv.preference.UserPreferences.Companion.screensaverIn
 import org.jellyfin.androidtv.preference.constant.AVCLevel
 import org.jellyfin.androidtv.preference.constant.AppTheme
 import org.jellyfin.androidtv.preference.constant.AudioBehavior
+import org.jellyfin.androidtv.preference.constant.AudioBoost
 import org.jellyfin.androidtv.preference.constant.BackdropBehavior
 import org.jellyfin.androidtv.preference.constant.BitstreamAudioMode
 import org.jellyfin.androidtv.preference.constant.BufferLength
@@ -165,9 +166,12 @@ class UserPreferences(context: Context) : SharedPreferenceStore(
 		 * A track that the server has to transcode (because the device can only pass the format
 		 * through and its pass-through is not usable) is decoded to the level of the source, while
 		 * a television that decodes the same format itself applies its own level to the bitstream.
-		 * The difference is audible, so the decoded audio can be raised.
+		 * The difference is audible, so the decoded audio can be raised by a step the user picks.
+		 *
+		 * The key is separate from the boolean that an earlier build used for the same option,
+		 * because a preference cannot change its type once it has been written.
 		 */
-		var audioBoost = booleanPreference("audio_boost", false)
+		var audioBoost = enumPreference("audio_boost_level", AudioBoost.OFF)
 
 		/**
 		 * AC3 bitstream device profile override.

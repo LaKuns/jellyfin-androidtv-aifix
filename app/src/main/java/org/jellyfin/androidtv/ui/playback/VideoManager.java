@@ -158,8 +158,8 @@ public class VideoManager {
 
         // Volume normalisation (audio night mode) and the level of the audio that is decoded here
         // instead of being passed through to the television.
-        boolean audioBoost = userPreferences.get(UserPreferences.Companion.getAudioBoost());
-        if (nightModeEnabled || audioBoost) {
+        int audioBoost = userPreferences.get(UserPreferences.Companion.getAudioBoost()).getMillibels();
+        if (nightModeEnabled || audioBoost > 0) {
             mExoPlayer.addAnalyticsListener(new AnalyticsListener() {
                 @Override
                 public void onAudioSessionIdChanged(AnalyticsListener.EventTime eventTime, int audioSessionId) {

@@ -126,8 +126,13 @@
     <string name="pref_audio_direct">Direct</string>
     <string name="pref_audio_compat">Downmix to stereo</string>
     <string name="pref_audio_night_mode">Audio night mode (experimental)</string>
-    <string name="pref_audio_boost">Boost decoded audio by 6 dB</string>
-    <string name="pref_audio_boost_description">Raises audio that the device decodes itself. With the pass-through of the surround formats turned off the television no longer applies its own level, which makes the same volume position sound quieter. The peaks are limited, so nothing is clipped.</string>
+    <string name="pref_audio_boost">Boost of decoded audio</string>
+    <string name="pref_audio_boost_off">No boost</string>
+    <string name="pref_audio_boost_2">+2 dB</string>
+    <string name="pref_audio_boost_4">+4 dB</string>
+    <string name="pref_audio_boost_6">+6 dB</string>
+    <string name="pref_audio_boost_8">+8 dB</string>
+    <string name="pref_audio_boost_description">Raises audio that the device decodes itself. With the pass-through of the surround formats turned off the television no longer applies its own level, which makes the same volume position sound quieter. Every step up to +4 dB is a clean gain; above that the loudest moments are limited so that nothing is clipped.</string>
     <string name="lbl_audio_output">Audio output</string>
     <string name="lbl_goto_series">Go to series</string>
     <string name="lbl_enable_debug">Debug options</string>

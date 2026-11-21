@@ -309,10 +309,9 @@ fun SettingsPlaybackAdvancedScreen() {
 
 			ListButton(
 				headingContent = { Text(stringResource(R.string.pref_audio_boost)) },
-				captionContent = { Text(stringResource(R.string.pref_audio_boost_description)) },
-				trailingContent = { Checkbox(checked = audioBoost) },
-				onClick = { audioBoost = !audioBoost },
-				modifier = Modifier.focusKey("audio_boost")
+				captionContent = { Text(stringResource(audioBoost.nameRes)) },
+				onClick = { router.push(Routes.PLAYBACK_AUDIO_BOOST) },
+				modifier = Modifier.focusKey(Routes.PLAYBACK_AUDIO_BOOST)
 			)
 		}
 
