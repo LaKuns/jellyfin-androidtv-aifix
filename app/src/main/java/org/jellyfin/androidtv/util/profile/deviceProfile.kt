@@ -115,10 +115,10 @@ fun createDeviceProfile(
 	// source, which costs the resolution of the original.
 	val throughputLimit = PlaybackThroughput.getStreamBitrateLimit(context, sourceBitrate)
 
-	// The server must not send a stream that is larger than the display. The
-	// picture is scaled down by the graphics hardware anyway, and the pixels
-	// that are scaled away cost decoding power and bandwidth without ever being
-	// visible.
+	// A device that is fast enough plays the resolution of the source: the video pipeline
+	// scales a 4K stream down to a 1080p screen for free, while asking the server for a
+	// smaller picture costs it a full re-encode. Only a device that is too slow for 4K gets
+	// a limit, and that limit is smaller than the display as well.
 	val resolutionLimit = getResolutionLimit(context, lowPerformanceDevice)
 	val displayHdr = getDisplayHdrCapabilities(context)
 
@@ -544,10 +544,10 @@ fun createDeviceProfile(
 		}
 	}
 
-	// A stream that is larger than the display is scaled down by the graphics
-	// hardware, so the server is asked for a stream that fits the screen. A
-	// device that is too slow for the full interface gets a smaller limit still,
-	// because its decoder cannot sustain a high bitrate or 4K in real time.
+	// A device that is too slow for 4K is asked for a smaller picture, because its decoder
+	// cannot follow a 4K stream in real time. Every other device is limited by its decoder
+	// only: a 4K stream on a 1080p screen is scaled down by the video pipeline, which is free,
+	// while a server transcode would re-encode the whole film.
 	if (maxVideoWidth != null && maxVideoHeight != null) {
 		arrayOf(
 			Codec.Video.AV1,
@@ -801,15 +801,24 @@ private fun Size.limitTo(maxWidth: Int?, maxHeight: Int?): Size = Size(
 )
 
 /**
- * The largest resolution that the server may send to the device.
+ * The largest resolution that the server may send to a device that is too slow for 4K.
  *
- * A stream that is larger than the display is scaled down by the graphics
- * hardware, so the pixels that are scaled away are paid for in decoding power
- * and bandwidth without ever being visible. A device that is too slow for the
- * full interface gets a smaller limit still, because its decoder cannot
- * sustain a high bitrate or 4K in real time.
+ * The limit is deliberately not the size of the display. A device whose decoder handles 4K
+ * plays a 4K stream on a 1080p screen without the server doing anything: the video pipeline
+ * scales the picture down, which costs nothing but a little decoding power, while a server
+ * transcode costs the server a full re-encode and the picture a generation of quality. The
+ * bitrate limit still applies, so a stream that the connection cannot carry is scaled down by
+ * the server on its own.
+ *
+ * A device that is too slow for the full interface is the exception: its decoder cannot
+ * sustain 4K in real time and a stream that the decoder cannot follow stutters, so the server
+ * is asked for a smaller picture in that case.
+ *
+ * @return The limit or null when the decoder is the only limit
  */
 private fun getResolutionLimit(context: Context, lowPerformanceDevice: Boolean): Size? {
+	if (!lowPerformanceDevice) return null
+
 	val display = ContextCompat.getDisplayOrDefault(context)
 	val metrics = DisplayMetrics()
 	display.getRealMetrics(metrics)
@@ -817,8 +826,6 @@ private fun getResolutionLimit(context: Context, lowPerformanceDevice: Boolean):
 	val displayWidth = metrics.widthPixels
 	val displayHeight = metrics.heightPixels
 	if (displayWidth <= 0 || displayHeight <= 0) return null
-
-	if (!lowPerformanceDevice) return Size(displayWidth, displayHeight)
 
 	return Size(
 		minOf(PerformanceProfile.LOW_PERFORMANCE_MAX_VIDEO_WIDTH, displayWidth),
