@@ -145,6 +145,17 @@ class UserPreferences(context: Context) : SharedPreferenceStore(
 		var disableHevcMain10DirectPlay = booleanPreference("disable_hevc_main10_direct_play", defaultValue = false)
 
 		/**
+		 * Ask the hardware HEVC decoder whether it decodes Main 10 instead of trusting the
+		 * profile list that the media framework of the vendor reports.
+		 *
+		 * Several TV chips decode 10 bit HEVC in hardware — their specification promises
+		 * HDR10 and 8K HEVC, which is Main 10 by definition — while the profile list only
+		 * names the Main and the RExt profile. A server that trusts the list transcodes
+		 * every 10 bit file although the device is able to direct play it.
+		 */
+		var hevcMain10Probe = booleanPreference("hevc_main10_probe", defaultValue = true)
+
+		/**
 		 * Playback buffer size preset.
 		 */
 		var bufferLength = enumPreference("buffer_length", BufferLength.AUTO)

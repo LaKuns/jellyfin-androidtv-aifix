@@ -23,6 +23,7 @@ import org.jellyfin.androidtv.util.appendItem
 import org.jellyfin.androidtv.util.appendSection
 import org.jellyfin.androidtv.util.appendValue
 import org.jellyfin.androidtv.util.buildMarkdown
+import org.jellyfin.androidtv.util.profile.codec.HevcMain10Probe
 import org.jellyfin.androidtv.util.profile.codec.isPassthroughAudioAvailable
 import org.jellyfin.playback.core.support.PlaybackThroughput
 import org.jellyfin.sdk.api.client.util.ApiSerializer
@@ -192,7 +193,10 @@ fun createDeviceProfileReport(
 	// it. The difference between "the device decodes it", "the device passes it through" and
 	// "the player has nothing for it" is what explains the audio of a failed playback.
 	appendDetails("Audio codec support") {
-		val mediaTest = MediaCodecCapabilitiesTest(userPreferences[UserPreferences.softwareCodecsEnabled])
+		val mediaTest = MediaCodecCapabilitiesTest(
+			userPreferences[UserPreferences.softwareCodecsEnabled],
+			userPreferences[UserPreferences.hevcMain10Probe],
+		)
 
 		for (codec in supportedAudioCodecs) {
 			val format = passthroughAudioFormats[codec]
@@ -234,7 +238,10 @@ fun createDeviceProfileReport(
 	}
 
 	appendDetails("Codec HDR Support") {
-		val mediaTest = MediaCodecCapabilitiesTest(userPreferences[UserPreferences.softwareCodecsEnabled])
+		val mediaTest = MediaCodecCapabilitiesTest(
+			userPreferences[UserPreferences.softwareCodecsEnabled],
+			userPreferences[UserPreferences.hevcMain10Probe],
+		)
 
 		val codecHDRSupport = buildMap<String, Map<HdrFormats, Boolean>> {
 			if (mediaTest.supportsAV1()) {
@@ -265,6 +272,22 @@ fun createDeviceProfileReport(
 			}
 			appendLine()
 		}
+	}
+
+	// The profile list of a decoder is not always complete, so the hardware decoder is asked
+	// directly whether it decodes Main 10. The answer decides whether the server direct plays
+	// 10 bit HEVC or re-encodes every such file.
+	appendDetails("HEVC Main 10 probe") {
+		val mediaTest = MediaCodecCapabilitiesTest(
+			userPreferences[UserPreferences.softwareCodecsEnabled],
+			userPreferences[UserPreferences.hevcMain10Probe],
+		)
+
+		appendItem("Probe enabled") { appendValue(userPreferences[UserPreferences.hevcMain10Probe].toString()) }
+		appendItem("Hardware decoder accepts Main 10") { appendValue(HevcMain10Probe.isSupported().toString()) }
+		appendItem("Level accepted by the probe") { appendValue(HevcMain10Probe.getLevel().toString()) }
+		appendItem("Declared by the profile") { appendValue(mediaTest.supportsHevcMain10().toString()) }
+		appendItem("Declared level") { appendValue(mediaTest.getHevcMain10Level().toString()) }
 	}
 
 	appendDetails("Display information") {

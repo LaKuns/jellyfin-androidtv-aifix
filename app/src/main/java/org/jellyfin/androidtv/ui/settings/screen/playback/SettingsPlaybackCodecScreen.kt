@@ -91,6 +91,18 @@ fun SettingsPlaybackCodecScreen() {
 		}
 
 		item {
+			var hevcMain10Probe by rememberPreference(userPreferences, UserPreferences.hevcMain10Probe)
+
+			ListButton(
+				headingContent = { Text(stringResource(R.string.pref_hevc_main10_probe)) },
+				captionContent = { Text(stringResource(R.string.pref_hevc_main10_probe_description)) },
+				trailingContent = { Checkbox(checked = hevcMain10Probe) },
+				onClick = { hevcMain10Probe = !hevcMain10Probe },
+				modifier = Modifier.focusKey("hevc_main10_probe")
+			)
+		}
+
+		item {
 			var disableHevcMain10DirectPlay by rememberPreference(userPreferences, UserPreferences.disableHevcMain10DirectPlay)
 
 			ListButton(

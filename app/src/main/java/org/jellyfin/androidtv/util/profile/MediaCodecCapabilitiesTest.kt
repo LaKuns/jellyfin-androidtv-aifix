@@ -10,11 +10,16 @@ import org.jellyfin.androidtv.util.profile.codec.MediaCodecQuery
 
 class MediaCodecCapabilitiesTest(
 	private val softwareCodecsEnabled: Boolean,
+	/**
+	 * Whether a hardware decoder that does not list Main 10 is probed for it. The profile
+	 * list of a decoder is not always complete, see [HevcMain10Probe].
+	 */
+	private val probeHevcMain10: Boolean = false,
 ) {
 	private val mediaCodecList by lazy { MediaCodecList(MediaCodecList.REGULAR_CODECS) }
 	private val codecQuery by lazy { MediaCodecQuery(mediaCodecList, softwareCodecsEnabled) }
 	private val avc by lazy { AvcCodecCapabilities(codecQuery) }
-	private val hevc by lazy { HevcCodecCapabilities(codecQuery) }
+	private val hevc by lazy { HevcCodecCapabilities(codecQuery, probeHevcMain10) }
 	private val av1 by lazy { Av1CodecCapabilities(codecQuery) }
 
 	fun supportsAV1(): Boolean = av1.supportsAv1()

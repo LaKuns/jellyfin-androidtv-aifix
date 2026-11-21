@@ -717,6 +717,8 @@
     <string name="hlg">HLG</string>
     <string name="pref_software_codecs_enabled">Use software codecs</string>
     <string name="pref_software_codecs_enabled_description">Some software-based implementations may degrade performance. Disabling this option makes transcoding more likely.</string>
+    <string name="pref_hevc_main10_probe">Probe 10-bit HEVC support</string>
+    <string name="pref_hevc_main10_probe_description">Ask the hardware decoder whether it decodes 10-bit HEVC instead of trusting the profile list that the system reports. Some TV chips decode 10-bit HEVC in hardware while the list only names the Main profile.</string>
     <string name="pref_disable_hevc_main10_direct_play">Disable 10-bit HEVC direct play</string>
     <string name="pref_disable_hevc_main10_direct_play_description">10-bit HEVC (Main 10) is transcoded to H.264 by the server at the original resolution. Enable this if the device cannot decode 10-bit HEVC in hardware.</string>
     <string name="pref_disable_hevc_direct_play">Disable HEVC direct play</string>

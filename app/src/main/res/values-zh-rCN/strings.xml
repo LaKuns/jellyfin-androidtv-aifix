@@ -675,6 +675,8 @@
     <string name="playback_info_transcoding_note">服务器正在转码此文件</string>
     <string name="pref_software_codecs_enabled">使用软件编解码器</string>
     <string name="pref_software_codecs_enabled_description">某些基于软件的实现方式可能会降低性能。禁用此选项会增加转码的可能性。</string>
+    <string name="pref_hevc_main10_probe">探测 10bit HEVC 支持</string>
+    <string name="pref_hevc_main10_probe_description">直接询问硬件解码器能否解码 10bit HEVC，而不是相信系统上报的 profile 列表。部分电视芯片支持 10bit 硬解，但列表里只写了 Main。</string>
     <string name="pref_disable_hevc_main10_direct_play">禁用 10bit HEVC 直放</string>
     <string name="pref_disable_hevc_main10_direct_play_description">10bit HEVC (Main 10) 将由服务器转码为 H.264，保持原始分辨率。设备无法硬件解码 10bit HEVC 时启用。</string>
     <string name="pref_disable_hevc_direct_play">禁用 HEVC 直放</string>

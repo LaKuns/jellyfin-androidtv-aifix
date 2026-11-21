@@ -6,6 +6,11 @@ import org.jellyfin.androidtv.util.AndroidVersion
 
 class HevcCodecCapabilities(
 	private val query: MediaCodecQuery,
+	/**
+	 * Whether the hardware decoder is probed for Main 10. The profile list of a decoder is
+	 * not always complete, so the decoder is asked directly instead of being trusted.
+	 */
+	private val probeMain10: Boolean = false,
 ) {
 	companion object {
 		// HEVC levels as reported by ffprobe are multiplied by 30, e.g. level 4.1 is 123
@@ -31,11 +36,12 @@ class HevcCodecCapabilities(
 
 	fun supportsHevc(): Boolean = query.hasCodecForMime(MIME_HEVC)
 
-	fun supportsHevcMain10(): Boolean = query.hasDecoder(
-		MIME_HEVC,
-		CodecProfileLevel.HEVCProfileMain10,
-		CodecProfileLevel.HEVCMainTierLevel4,
-	)
+	fun supportsHevcMain10(): Boolean =
+		query.hasDecoder(
+			MIME_HEVC,
+			CodecProfileLevel.HEVCProfileMain10,
+			CodecProfileLevel.HEVCMainTierLevel4,
+		) || (probeMain10 && HevcMain10Probe.isSupported())
 
 	fun supportsHevcDolbyVision(): Boolean =
 		AndroidVersion.isAtLeastN &&
@@ -68,7 +74,14 @@ class HevcCodecCapabilities(
 
 	fun getMainLevel(): Int = getLevel(CodecProfileLevel.HEVCProfileMain)
 
-	fun getMain10Level(): Int = getLevel(CodecProfileLevel.HEVCProfileMain10)
+	fun getMain10Level(): Int {
+		val level = getLevel(CodecProfileLevel.HEVCProfileMain10)
+		if (level > 0) return level
+
+		// The probe answers the level that the decoder accepted when it is able to decode
+		// Main 10 although its profile list does not say so.
+		return if (probeMain10) HevcMain10Probe.getLevel() else 0
+	}
 
 	private fun getLevel(profile: Int): Int {
 		val level = query.getDecoderLevel(MIME_HEVC, profile)

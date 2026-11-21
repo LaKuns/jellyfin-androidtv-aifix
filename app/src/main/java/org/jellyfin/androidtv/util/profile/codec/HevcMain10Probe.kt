@@ -1,0 +1,151 @@
+package org.jellyfin.androidtv.util.profile.codec
+
+import android.graphics.SurfaceTexture
+import android.media.MediaCodec
+import android.media.MediaCodecInfo.CodecProfileLevel
+import android.media.MediaCodecList
+import android.media.MediaFormat
+import android.view.Surface
+import org.jellyfin.androidtv.util.AndroidVersion
+import timber.log.Timber
+
+/**
+ * Probes whether a hardware decoder of the device decodes 10 bit HEVC (Main 10).
+ *
+ * The profile list that a decoder reports is not always complete. Several TV chips decode
+ * Main 10 in hardware — their specification promises HDR10 and 8K HEVC, which is Main 10 by
+ * definition — while the media framework of the vendor only lists the Main and the RExt
+ * profile. A server that trusts that list transcodes every 10 bit file, although the device
+ * is able to direct play it: the picture is re-encoded, and every start waits for the first
+ * segment of the transcode.
+ *
+ * The probe therefore does not read the list but configures the hardware decoder with a
+ * Main 10 format. A decoder that cannot decode the profile fails to configure.
+ */
+object HevcMain10Probe {
+	private const val MIME = "video/hevc"
+
+	private const val UNSET = -1
+	private const val UNSUPPORTED = 0
+
+	/**
+	 * The levels that are tried, highest first, with the value that ffprobe reports for it
+	 * (the level of ffprobe is the level of the codec multiplied by 30).
+	 */
+	private val LEVELS = listOf(
+		CodecProfileLevel.HEVCMainTierLevel52 to 156,
+		CodecProfileLevel.HEVCMainTierLevel51 to 153,
+		CodecProfileLevel.HEVCMainTierLevel5 to 150,
+		CodecProfileLevel.HEVCMainTierLevel41 to 123,
+		CodecProfileLevel.HEVCMainTierLevel4 to 120,
+	)
+
+	@Volatile
+	private var cachedLevel: Int = UNSET
+
+	/**
+	 * Whether a hardware decoder of the device decodes Main 10.
+	 */
+	fun isSupported(): Boolean = getLevel() > UNSUPPORTED
+
+	/**
+	 * The highest level at which a hardware decoder accepts Main 10, in the level of ffprobe,
+	 * or zero when no hardware decoder accepts it.
+	 *
+	 * The answer is cached: the probe creates a decoder, which costs a few milliseconds, and
+	 * the profile is built every time that a playback starts.
+	 */
+	@Synchronized
+	fun getLevel(): Int {
+		if (cachedLevel == UNSET) {
+			cachedLevel = probe()
+		}
+
+		return cachedLevel
+	}
+
+	private fun probe(): Int {
+		val names = hardwareDecoderNames()
+		if (names.isEmpty()) {
+			Timber.i("Main 10 probe: the device has no hardware HEVC decoder")
+			return UNSUPPORTED
+		}
+
+		var texture: SurfaceTexture? = null
+		var surface: Surface? = null
+
+		try {
+			texture = SurfaceTexture(0)
+			texture.setDefaultBufferSize(1920, 1080)
+			surface = Surface(texture)
+
+			for (name in names) {
+				val level = probeDecoder(name, surface)
+				if (level > UNSUPPORTED) return level
+			}
+		} catch (exception: Exception) {
+			Timber.w(exception, "Main 10 probe failed")
+		} finally {
+			surface?.release()
+			texture?.release()
+		}
+
+		Timber.i("Main 10 probe: no hardware decoder accepts Main 10")
+		return UNSUPPORTED
+	}
+
+	private fun probeDecoder(name: String, surface: Surface): Int {
+		for ((codecLevel, ffprobeLevel) in LEVELS) {
+			val codec = try {
+				MediaCodec.createByCodecName(name)
+			} catch (exception: Exception) {
+				Timber.d(exception, "Main 10 probe: cannot create %s", name)
+				return UNSUPPORTED
+			}
+
+			try {
+				val format = MediaFormat.createVideoFormat(MIME, 1920, 1080)
+				format.setInteger(MediaFormat.KEY_PROFILE, CodecProfileLevel.HEVCProfileMain10)
+				format.setInteger(MediaFormat.KEY_LEVEL, codecLevel)
+				codec.configure(format, surface, null, 0)
+
+				Timber.i("Main 10 probe: %s configures Main 10 at level %d", name, ffprobeLevel)
+				return ffprobeLevel
+			} catch (exception: Exception) {
+				Timber.d(exception, "Main 10 probe: %s rejects level %d", name, ffprobeLevel)
+			} finally {
+				try {
+					codec.release()
+				} catch (_: Exception) {
+					// The decoder is not usable in any case.
+				}
+			}
+		}
+
+		return UNSUPPORTED
+	}
+
+	/**
+	 * The decoders of the device that are not software decoders.
+	 *
+	 * A software decoder configures any profile, so it proves nothing about the hardware.
+	 */
+	private fun hardwareDecoderNames(): List<String> =
+		MediaCodecList(MediaCodecList.ALL_CODECS).codecInfos
+			.asSequence()
+			.filter { !it.isEncoder }
+			.filter { info -> info.supportedTypes.any { type -> type.equals(MIME, ignoreCase = true) } }
+			.filter { info -> !isSoftwareCodec(info) }
+			.map { it.name }
+			.toList()
+
+	private fun isSoftwareCodec(info: android.media.MediaCodecInfo): Boolean =
+		if (AndroidVersion.isAtLeastQ) {
+			info.isSoftwareOnly
+		} else {
+			info.name.startsWith("OMX.google.") ||
+				info.name.startsWith("OMX.ffmpeg.") ||
+				info.name.startsWith("c2.android.") ||
+				info.name.startsWith("c2.google.")
+		}
+}

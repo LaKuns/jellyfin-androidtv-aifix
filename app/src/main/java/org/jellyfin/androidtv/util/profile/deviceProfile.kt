@@ -88,7 +88,8 @@ fun createDeviceProfile(
 	// decoder, and a device with a hardware decoder is not necessarily able to
 	// decode everything that a software decoder claims.
 	val mediaTest = MediaCodecCapabilitiesTest(
-		userPreferences[UserPreferences.softwareCodecsEnabled]
+		userPreferences[UserPreferences.softwareCodecsEnabled],
+		userPreferences[UserPreferences.hevcMain10Probe],
 	)
 
 	// A device without a hardware decoder for multichannel audio has to decode it in
