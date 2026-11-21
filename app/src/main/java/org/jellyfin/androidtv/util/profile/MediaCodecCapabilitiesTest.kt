@@ -71,6 +71,14 @@ class MediaCodecCapabilitiesTest(
 
 	fun getMaxResolution(mime: String): Size = codecQuery.getMaxResolution(mime)
 
+	/**
+	 * Whether the device is able to decode the audio format itself.
+	 *
+	 * Software decoders count as well: the audio of a TV box is decoded on the cpu for the
+	 * most part, and a format without any decoder cannot be played at all.
+	 */
+	fun supportsAudioCodec(mime: String): Boolean = codecQuery.hasAnyDecoderForMime(mime)
+
 	fun getMaxAudioChannels(): Int = codecQuery.getMaxAudioChannels(MimeTypes.AUDIO_AAC)
 
 	/**

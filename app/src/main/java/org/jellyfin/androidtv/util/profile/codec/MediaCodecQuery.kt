@@ -55,6 +55,19 @@ class MediaCodecQuery(
 		return true
 	}
 
+	/**
+	 * Whether any decoder of the device supports the mime type, including software decoders.
+	 *
+	 * The "use software codecs" option is deliberately ignored: it describes whether a
+	 * format may be decoded on the cpu, and a device profile that does not declare the
+	 * audio formats it decodes in software cannot play them at all. The audio of a film is
+	 * decoded in software on most TV boxes, only the video has a hardware decoder.
+	 */
+	fun hasAnyDecoderForMime(mime: String): Boolean =
+		mediaCodecList.codecInfos.asSequence()
+			.filter { !it.isEncoder }
+			.any { info -> info.supportedTypes.any { it.equals(mime, ignoreCase = true) } }
+
 	fun hasDecoder(mime: String, profile: Int, level: Int): Boolean =
 		decoderInfos().any { info -> supportsProfileLevel(info, mime, profile, level) }
 

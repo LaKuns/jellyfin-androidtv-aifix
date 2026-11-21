@@ -30,52 +30,6 @@ import org.jellyfin.sdk.model.deviceprofile.DeviceProfileBuilder
 import org.jellyfin.sdk.model.deviceprofile.buildDeviceProfile
 import kotlin.math.roundToInt
 
-private val downmixSupportedAudioCodecs = arrayOf(
-	Codec.Audio.AAC,
-	Codec.Audio.MP2,
-	Codec.Audio.MP3,
-)
-
-private val supportedAudioCodecs = arrayOf(
-	Codec.Audio.AAC,
-	Codec.Audio.AAC_LATM,
-	Codec.Audio.AC3,
-	Codec.Audio.ALAC,
-	Codec.Audio.DCA,
-	Codec.Audio.DTS,
-	Codec.Audio.EAC3,
-	Codec.Audio.FLAC,
-	Codec.Audio.MLP,
-	Codec.Audio.MP2,
-	Codec.Audio.MP3,
-	Codec.Audio.OPUS,
-	Codec.Audio.PCM_ALAW,
-	Codec.Audio.PCM_MULAW,
-	Codec.Audio.PCM_S16LE,
-	Codec.Audio.PCM_S20LE,
-	Codec.Audio.PCM_S24LE,
-	Codec.Audio.TRUEHD,
-	Codec.Audio.VORBIS,
-)
-
-private val hlsMpegTsAudioCodecs = arrayOf(
-	Codec.Audio.AAC,
-	Codec.Audio.AC3,
-	Codec.Audio.EAC3,
-	Codec.Audio.MP3
-)
-
-private val hlsFmp4AudioCodecs = arrayOf(
-	Codec.Audio.AAC,
-	Codec.Audio.AC3,
-	Codec.Audio.EAC3,
-	Codec.Audio.MP3,
-	Codec.Audio.ALAC,
-	Codec.Audio.FLAC,
-	Codec.Audio.OPUS,
-	Codec.Audio.DTS,
-)
-
 private fun UserPreferences.getMaxBitrate(): Int {
 	var maxBitrate = this[UserPreferences.maxBitrate].toFloatOrNull()
 
@@ -91,6 +45,14 @@ private fun UserPreferences.getHdrRangeTypesFor(mode: HdrOverrideMode): Set<Vide
 		.filter { this[it.preference] == mode }
 		.flatMapTo(mutableSetOf()) { it.videoRangeTypes }
 
+/**
+ * Whether a format may be handed to the television or the receiver instead of being decoded.
+ *
+ * A format is passed through when the device reports that its audio output supports it, or when
+ * the user asked for it explicitly. The report of the device is the only source for the automatic
+ * mode: a box that has no decoder for a format can still pass it through, and that is the normal
+ * case for the surround formats on a TV box.
+ */
 private fun UserPreferences.isBitstreamAudioEnabled(context: Context, format: BitstreamAudioFormat): Boolean =
 	when (this[format.preference]) {
 		BitstreamAudioMode.AUTO -> isPassthroughAudioAvailable(context, format.mimeType)
@@ -229,6 +191,11 @@ fun createDeviceProfile(
 	maxVideoHeight: Int? = null,
 	displayHdr: DisplayHdrCapabilities = DisplayHdrCapabilities(),
 ) = buildDeviceProfile {
+	// The formats that are handed to the television or the receiver are the only ones that need
+	// a decision: the user may enable or disable them, and in the automatic mode the device is
+	// asked whether its audio output supports them. A device without a decoder is not excluded,
+	// because a track does not have to be decoded to be played - passing it through is the
+	// normal way to play surround audio on a TV box.
 	val allowedAudioCodecs = when {
 		downMixAudio -> downmixSupportedAudioCodecs
 		else -> supportedAudioCodecs
