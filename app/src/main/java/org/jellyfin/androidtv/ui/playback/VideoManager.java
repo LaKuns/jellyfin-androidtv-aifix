@@ -125,7 +125,14 @@ public class VideoManager {
         nightModeEnabled = userPreferences.get(UserPreferences.Companion.getAudioNightMode());
 
         boolean assDirectPlay = userPreferences.get(UserPreferences.Companion.getAssDirectPlay());
-        AssHandler assHandler = assDirectPlay ? new AssHandler(AssRenderType.OVERLAY_OPEN_GL, new AssHandlerConfig()) : null;
+        // The subtitle overlay is rendered at the size of the video frame unless it is limited,
+        // and a 4K frame needs four times the memory of a 1080p one. The overlay is drawn on a
+        // 1080p view either way, so a 4K render wastes memory that the application heap of a TV
+        // box does not have: the heap of this device is 128 MB and a 4K overlay filled it within
+        // a few seconds, which ended the playback with an OutOfMemoryError.
+        AssHandler assHandler = assDirectPlay
+                ? new AssHandler(AssRenderType.OVERLAY_OPEN_GL, new AssHandlerConfig(10_000, 128, 1920 * 1080))
+                : null;
 
         mExoPlayer = configureExoplayerBuilder(activity, assHandler).build();
 
