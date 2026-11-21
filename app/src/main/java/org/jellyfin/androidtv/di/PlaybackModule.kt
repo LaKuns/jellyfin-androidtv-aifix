@@ -82,8 +82,17 @@ fun Scope.createPlaybackManager() = playbackManager(androidContext()) {
 	// user picked always wins over that.
 	val linkBitrate = PlaybackThroughput.getLinkSafeBitrate(androidContext())
 	val userStartBuffer = bufferLength.bufferForPlaybackDuration
+	// A wireless connection stutters now and then: a retransmission or a busy
+	// channel delays a segment for a moment, and a thin buffer runs dry right
+	// away when that happens. A cable carries the stream without interruptions,
+	// so a thin buffer is enough there. A connection that is unknown is treated
+	// like a wireless one, because a buffer that is too generous only costs a
+	// moment at the start.
+	val activeNetwork = PlaybackThroughput.getActiveNetwork(androidContext())
+	val wireless = activeNetwork.isEmpty() || activeNetwork.startsWith("WIFI:")
 	val startBufferDuration: Duration? = when {
 		userStartBuffer != null -> userStartBuffer
+		wireless -> 2.5.seconds
 		linkBitrate >= PerformanceProfile.FAST_CONNECTION_BITRATE -> 1.5.seconds
 		else -> 2.5.seconds
 	}

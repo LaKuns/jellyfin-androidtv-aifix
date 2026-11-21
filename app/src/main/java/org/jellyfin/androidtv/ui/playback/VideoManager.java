@@ -336,7 +336,14 @@ public class VideoManager {
             // connection delivers the first seconds quickly, so the picture appears
             // sooner without risking a stall right at the beginning.
             long linkBitrate = PlaybackThroughput.getLinkSafeBitrate(context);
-            int startBufferMs = linkBitrate >= PerformanceProfile.FAST_CONNECTION_BITRATE ? 1_500 : 2_500;
+            // A wireless connection stutters now and then: a retransmission or a
+            // busy channel delays a segment for a moment, and a thin buffer runs
+            // dry right away when that happens. A cable carries the stream without
+            // interruptions, so a thin buffer is enough there. A connection that
+            // is unknown is treated like a wireless one.
+            String activeNetwork = PlaybackThroughput.getActiveNetwork(context);
+            boolean wireless = activeNetwork.isEmpty() || activeNetwork.startsWith("WIFI:");
+            int startBufferMs = (!wireless && linkBitrate >= PerformanceProfile.FAST_CONNECTION_BITRATE) ? 1_500 : 2_500;
             loadControl = new DefaultLoadControl.Builder()
                     .setBufferDurationsMs(15_000, 30_000, startBufferMs, 5_000)
                     .setBackBuffer(0, false)
