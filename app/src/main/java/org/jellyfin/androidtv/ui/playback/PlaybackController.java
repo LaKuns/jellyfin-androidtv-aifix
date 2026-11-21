@@ -776,37 +776,43 @@ public class PlaybackController implements PlaybackControllerNotifiable {
 
         // get subtitle info - prefer saved language preference over server default
         String lastSubtitleLanguage = videoQueueManager.getValue().getLastPlayedSubtitleLanguageIsoCode();
-        if (lastSubtitleLanguage != null) {
-            if (lastSubtitleLanguage.isEmpty()) {
-                // User explicitly disabled subtitles
-                mCurrentOptions.setSubtitleStreamIndex(null);
-            } else if (response.getMediaSource().getMediaStreams() != null) {
-                // Find subtitle stream matching saved language
-                Integer matchingIndex = null;
+        if (lastSubtitleLanguage != null && lastSubtitleLanguage.isEmpty()) {
+            // User explicitly disabled subtitles
+            mCurrentOptions.setSubtitleStreamIndex(null);
+        } else {
+            Integer matchingIndex = null;
+
+            // The language of the last playback comes first: the user picked it.
+            if (lastSubtitleLanguage != null && response.getMediaSource().getMediaStreams() != null) {
                 for (MediaStream stream : response.getMediaSource().getMediaStreams()) {
                     if (stream.getType() == MediaStreamType.SUBTITLE && lastSubtitleLanguage.equals(stream.getLanguage())) {
                         matchingIndex = stream.getIndex();
                         break;
                     }
                 }
-                mCurrentOptions.setSubtitleStreamIndex(matchingIndex);
             }
-        } else {
-            // No saved preference, use server default
-            mCurrentOptions.setSubtitleStreamIndex(response.getMediaSource().getDefaultSubtitleStreamIndex());
-            if (mCurrentOptions.getSubtitleStreamIndex() == null || mCurrentOptions.getSubtitleStreamIndex() < 0) {
-                if (userPreferences.getValue().get(UserPreferences.Companion.getSubtitlesAutoSelect())
-                        && response.getMediaSource().getMediaStreams() != null) {
-                    for (MediaStream stream : response.getMediaSource().getMediaStreams()) {
-                        if (stream.getType() == MediaStreamType.SUBTITLE && stream.getCodec() != null
-                                && java.util.Arrays.asList("srt", "subrip", "ass", "ssa", "webvtt", "vtt", "ttml", "mov_text")
-                                    .contains(stream.getCodec().toLowerCase(java.util.Locale.ROOT))) {
-                            mCurrentOptions.setSubtitleStreamIndex(stream.getIndex());
-                            break;
-                        }
-                    }
-                }
+
+            // A subtitle in chinese comes next. The server usually has no default
+            // subtitle and the preference of the user only remembers the language
+            // of the last playback, so nothing was selected before and the
+            // subtitles had to be picked by hand every time.
+            if (matchingIndex == null) {
+                matchingIndex = findPreferredSubtitle(response.getMediaSource().getMediaStreams());
             }
+
+            // The default of the server comes next.
+            if (matchingIndex == null) {
+                Integer defaultIndex = response.getMediaSource().getDefaultSubtitleStreamIndex();
+                if (defaultIndex != null && defaultIndex >= 0) matchingIndex = defaultIndex;
+            }
+
+            // Any text subtitle the device is able to show comes last, if the user
+            // asked for that.
+            if (matchingIndex == null && userPreferences.getValue().get(UserPreferences.Companion.getSubtitlesAutoSelect())) {
+                matchingIndex = findTextSubtitle(response.getMediaSource().getMediaStreams());
+            }
+
+            mCurrentOptions.setSubtitleStreamIndex(matchingIndex);
         }
 
         // The previous attempt failed while the server was burning subtitles into the video, so
@@ -1558,5 +1564,103 @@ public class PlaybackController implements PlaybackControllerNotifiable {
         SEEKING,
         UNDEFINED,
         ERROR
+    }
+
+    /**
+     * The subtitle stream that is used when the user did not choose one.
+     *
+     * A subtitle in simplified chinese is preferred, because most of the films in
+     * this library only carry that one and it has to be picked by hand otherwise.
+     * A subtitle in any other chinese comes next, and a subtitle in another
+     * language is not selected at all: the user asks for the subtitles of their
+     * own language, not for any subtitle.
+     *
+     * @param streams The streams of the media source
+     * @return The index of the stream or null when there is no chinese subtitle
+     */
+    @Nullable
+    private static Integer findPreferredSubtitle(@Nullable List<MediaStream> streams) {
+        if (streams == null) return null;
+
+        Integer chinese = null;
+
+        for (MediaStream stream : streams) {
+            if (stream.getType() != MediaStreamType.SUBTITLE) continue;
+            if (!isTextSubtitle(stream)) continue;
+
+            String language = stream.getLanguage();
+            String title = stream.getTitle() != null ? stream.getTitle() : "";
+
+            if (isSimplifiedChinese(language, title)) return stream.getIndex();
+            if (chinese == null && isChinese(language, title)) chinese = stream.getIndex();
+        }
+
+        return chinese;
+    }
+
+    /**
+     * The first subtitle stream that the device is able to show.
+     *
+     * @param streams The streams of the media source
+     * @return The index of the stream or null when there is no text subtitle
+     */
+    @Nullable
+    private static Integer findTextSubtitle(@Nullable List<MediaStream> streams) {
+        if (streams == null) return null;
+
+        for (MediaStream stream : streams) {
+            if (stream.getType() == MediaStreamType.SUBTITLE && isTextSubtitle(stream)) {
+                return stream.getIndex();
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Whether the subtitle is a text subtitle that the player is able to show.
+     */
+    private static boolean isTextSubtitle(MediaStream stream) {
+        if (stream.getCodec() == null) return false;
+
+        return java.util.Arrays.asList("srt", "subrip", "ass", "ssa", "webvtt", "vtt", "ttml", "mov_text")
+                .contains(stream.getCodec().toLowerCase(Locale.ROOT));
+    }
+
+    /**
+     * Whether the subtitle is in simplified chinese.
+     *
+     * The language of a subtitle stream is an ISO 639-2 code and the code of
+     * chinese differs between the libraries: chi, zho, cmn and zh are all used.
+     * The title of the stream names the language as well and is used when the
+     * code does not tell it.
+     */
+    private static boolean isSimplifiedChinese(@Nullable String language, String title) {
+        if (language != null) {
+            String code = language.toLowerCase(Locale.ROOT);
+            if (code.equals("chi") || code.equals("hans") || code.equals("cmn")
+                    || code.equals("zh") || code.startsWith("zh-cn") || code.startsWith("zh-hans")
+                    || code.equals("zh-sg")) {
+                return true;
+            }
+        }
+
+        return title.contains("简体") || title.contains("简中") || title.contains("CHS") || title.contains("GB");
+    }
+
+    /**
+     * Whether the subtitle is in chinese.
+     */
+    private static boolean isChinese(@Nullable String language, String title) {
+        if (language != null) {
+            String code = language.toLowerCase(Locale.ROOT);
+            if (code.equals("zho") || code.equals("cmn") || code.equals("hant") || code.equals("yue")
+                    || code.startsWith("zh-tw") || code.startsWith("zh-hk") || code.startsWith("zh-hant")) {
+                return true;
+            }
+        }
+
+        return title.contains("中文") || title.contains("繁體") || title.contains("繁体")
+                || title.toLowerCase(Locale.ROOT).contains("chinese");
     }
 }
