@@ -317,10 +317,10 @@ public class PlaybackController implements PlaybackControllerNotifiable {
         }
     }
 
-    private Display.Mode findBestDisplayMode(MediaStream videoStream) {
-        if (mFragment == null || mDisplayModes == null || videoStream.getRealFrameRate() == null)
+    @Nullable
+    private Display.Mode findBestDisplayMode(@Nullable MediaStream videoStream) {
+        if (mFragment == null || mDisplayModes == null || videoStream == null || videoStream.getRealFrameRate() == null || videoStream.getWidth() == null || videoStream.getHeight() == null)
             return null;
-
 
         int curWeight = 0;
         Display.Mode bestMode = null;
@@ -782,12 +782,19 @@ public class PlaybackController implements PlaybackControllerNotifiable {
         } else {
             Integer matchingIndex = null;
 
-            // The language of the last playback comes first: the user picked it.
+            // The language of the last playback comes first: the user picked it. The
+            // requested stream is kept when it matches that language, so a restart that
+            // switches between a baked and a plain subtitle does not select the baked one
+            // again.
             if (lastSubtitleLanguage != null && response.getMediaSource().getMediaStreams() != null) {
+                Integer requestedIndex = mCurrentOptions.getSubtitleStreamIndex();
                 for (MediaStream stream : response.getMediaSource().getMediaStreams()) {
                     if (stream.getType() == MediaStreamType.SUBTITLE && lastSubtitleLanguage.equals(stream.getLanguage())) {
-                        matchingIndex = stream.getIndex();
-                        break;
+                        if (matchingIndex == null) matchingIndex = stream.getIndex();
+                        if (requestedIndex != null && requestedIndex == stream.getIndex()) {
+                            matchingIndex = requestedIndex;
+                            break;
+                        }
                     }
                 }
             }
