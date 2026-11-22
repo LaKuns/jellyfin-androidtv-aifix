@@ -358,7 +358,7 @@ public class VideoManager {
         // the stream in memory and the app is killed by an OutOfMemoryError. Cap the target buffer
         // by the heap size instead, so the player holds a few dozen seconds of video and stops
         // loading before the heap is full.
-        int targetBufferBytes = getTargetBufferBytes();
+        int targetBufferBytes = org.jellyfin.playback.core.support.PlaybackBufferSizing.targetBufferBytes();
         Timber.i("Load control: target buffer %d bytes, heap %d bytes", targetBufferBytes, Runtime.getRuntime().maxMemory());
         DefaultLoadControl loadControl;
         if (lowPerformanceDevice) {
@@ -413,17 +413,6 @@ public class VideoManager {
         return exoPlayerBuilder;
     }
 
-    /**
-     * Returns the amount of media data the player is allowed to hold in memory.
-     *
-     * <p>media3 derives its default target buffer from the selected track types, which is far
-     * larger than the heap of a TV box. A quarter of the heap is a good compromise: it covers
-     * roughly 50 seconds of a 3-6 Mbit/s stream, while leaving the rest of the heap to the app.
-     */
-    private static int getTargetBufferBytes() {
-        long target = Runtime.getRuntime().maxMemory() / 4;
-        return (int) Math.max(16L * 1024 * 1024, Math.min(48L * 1024 * 1024, target));
-    }
 
     public boolean isInitialized() {
         return mExoPlayer != null;

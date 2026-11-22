@@ -47,6 +47,7 @@ import org.jellyfin.playback.core.model.PlayState
 import org.jellyfin.playback.core.model.PositionInfo
 import org.jellyfin.playback.core.queue.QueueEntry
 import org.jellyfin.playback.core.support.PlaySupportReport
+import org.jellyfin.playback.core.support.PlaybackBufferSizing
 import org.jellyfin.playback.core.timedevent.TimedEvent
 import org.jellyfin.playback.core.ui.PlayerSubtitleView
 import org.jellyfin.playback.core.ui.PlayerSurfaceView
@@ -163,6 +164,7 @@ class ExoPlayerBackend(
 			// durations above as a fallback, so bufferForPlaybackDuration was not actually
 			// deciding how long playback waits before showing a frame after a seek.
 			.setPrioritizeTimeOverSizeThresholds(true)
+			.setTargetBufferBytes(PlaybackBufferSizing.targetBufferBytes())
 			.build()
 
 		ExoPlayer.Builder(context)
@@ -485,7 +487,7 @@ class ExoPlayerBackend(
 		val deviceLanguage = Locale.getDefault().language.lowercase()
 
 		if (deviceLanguage.startsWith("zh")) {
-			val simplifiedMarkers = listOf("简", "gb", "chs")
+			val simplifiedMarkers = listOf("绠€", "gb", "chs")
 			candidates.firstOrNull { (group, index) ->
 				val label = group.getFormat(index).label.orEmpty().lowercase()
 				simplifiedMarkers.any(label::contains)
