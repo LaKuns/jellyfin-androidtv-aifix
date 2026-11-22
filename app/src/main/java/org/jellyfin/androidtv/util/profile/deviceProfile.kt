@@ -206,7 +206,9 @@ fun createDeviceProfile(
 			Codec.Audio.AC3 -> isAC3PrefEnabled
 			Codec.Audio.EAC3 -> isEAC3PrefEnabled
 			Codec.Audio.TRUEHD -> isTrueHDPrefEnabled
-			Codec.Audio.DTS -> isDTSPrefEnabled
+			// DCA is the other name the server uses for DTS, and a DTS track may be
+			// reported under either one: the choice of the user has to cover both.
+			Codec.Audio.DTS, Codec.Audio.DCA -> isDTSPrefEnabled
 			else -> true
 		}
 	}.toTypedArray()
