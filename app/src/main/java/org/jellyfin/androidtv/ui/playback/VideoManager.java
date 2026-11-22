@@ -398,13 +398,13 @@ public class VideoManager {
                     .setTargetBufferBytes(targetBufferBytes)
                     .build();
         } else {
+            // Keep the durations inside the byte cap: media3 stops loading when the allocated
+            // bytes reach the target, and with the default 50 second minimum a high bitrate
+            // stream can never reach it, which media3 reports as a stuck player. Ten seconds of
+            // minimum and thirty seconds of maximum fit into a quarter of the heap up to a
+            // bitrate of about 25 Mbit/s.
             loadControl = new DefaultLoadControl.Builder()
-                    .setBufferDurationsMs(50_000, 50_000, 2_500, 5_000)
-                    // The byte cap can be smaller than the minimum duration allows at a high
-                    // bitrate. Without this the loader stops at the cap while the buffer is
-                    // still below the minimum and never resumes - media3 then reports a stuck
-                    // player and the playback fails.
-                    .setPrioritizeTimeOverSizeThresholds(true)
+                    .setBufferDurationsMs(10_000, 30_000, 2_500, 5_000)
                     .setTargetBufferBytes(targetBufferBytes)
                     .build();
         }
