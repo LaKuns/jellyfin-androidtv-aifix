@@ -117,6 +117,8 @@ fun Scope.createPlaybackManager() = playbackManager(androidContext()) {
 		maxBufferDuration = if (conservativeBuffer) 30.seconds else bufferLength.maxBufferDuration,
 		bufferForPlaybackDuration = startBufferDuration,
 		bufferForPlaybackAfterRebufferDuration = if (conservativeBuffer) 5.seconds else bufferLength.bufferForPlaybackAfterRebufferDuration,
+		// The gain is read when a playback starts, the same way the old player reads it.
+		audioGain = { userPreferences[UserPreferences.audioBoost].millibels },
 	)
 	install(exoPlayerPlugin(get(), exoPlayerOptions))
 

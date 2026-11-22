@@ -12,6 +12,21 @@ class ExoPlayerAudioPipeline {
 			applyGain()
 		}
 
+	/**
+	 * The gain the user configured for the audio that the device decodes itself.
+	 *
+	 * A television raises the level of a bitstream that it decodes on its own, so the same track
+	 * sounds quieter when the application decodes it. The old player compensated that with an
+	 * enhancer, and the new one has to do the same or the level changes with the player.
+	 */
+	var userGainMillibels: Int = 0
+		set(value) {
+			if (field == value) return
+			Timber.d("User audio gain changed to $value mB")
+			field = value
+			applyGain()
+		}
+
 	fun setAudioSessionId(audioSessionId: Int) {
 		Timber.d("Audio session id changed to $audioSessionId")
 
@@ -31,13 +46,10 @@ class ExoPlayerAudioPipeline {
 			return
 		}
 
-		val targetGain = normalizationGain
-			// Convert to millibels
-			?.times(100f)
-			// Round to integer
-			?.toInt()
-			// Ignore if zero (so the enhancer will be disabled)
-			?.takeIf { it != 0 }
+		// The normalization gain is a level in decibels, the enhancer takes millibels.
+		val normalizationMillibels = normalizationGain?.times(100f)?.toInt() ?: 0
+		// A gain of zero means no processing at all: the enhancer is disabled then.
+		val targetGain = (normalizationMillibels + userGainMillibels).takeIf { it != 0 }
 
 		Timber.d("Applying gain (targetGain=$targetGain)")
 		runCatching {

@@ -238,6 +238,9 @@ class ExoPlayerBackend(
 		}
 
 		override fun onAudioSessionIdChanged(audioSessionId: Int) {
+			// The session is created once per playback, so the gain of the user is read again
+			// here: a change of the preference applies to the next playback without a restart.
+			audioPipeline.userGainMillibels = exoPlayerOptions.audioGain()
 			audioPipeline.setAudioSessionId(audioSessionId)
 		}
 
