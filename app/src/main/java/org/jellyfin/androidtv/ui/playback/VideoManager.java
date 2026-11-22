@@ -400,6 +400,11 @@ public class VideoManager {
         } else {
             loadControl = new DefaultLoadControl.Builder()
                     .setBufferDurationsMs(50_000, 50_000, 2_500, 5_000)
+                    // The byte cap can be smaller than the minimum duration allows at a high
+                    // bitrate. Without this the loader stops at the cap while the buffer is
+                    // still below the minimum and never resumes - media3 then reports a stuck
+                    // player and the playback fails.
+                    .setPrioritizeTimeOverSizeThresholds(true)
                     .setTargetBufferBytes(targetBufferBytes)
                     .build();
         }
