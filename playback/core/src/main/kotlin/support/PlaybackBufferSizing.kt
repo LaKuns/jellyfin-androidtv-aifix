@@ -9,13 +9,13 @@ package org.jellyfin.playback.core.support
  * player fills the heap with several minutes of the stream and the app dies with an
  * OutOfMemoryError.
  *
- * A quarter of the heap is enough for about 30-50 seconds of a normal 3-8 Mbit/s stream and
- * leaves the rest of the heap to the rest of the app.
+ * Half of the heap is enough for the fifty second buffer of the default load control at the
+ * bitrates of a television box and leaves the rest of the heap to the rest of the app.
  */
 object PlaybackBufferSizing {
-	private const val MINIMUM_BYTES = 16L * 1024 * 1024
-	private const val MAXIMUM_BYTES = 48L * 1024 * 1024
-	private const val HEAP_FRACTION = 4
+	private const val MINIMUM_BYTES = 32L * 1024 * 1024
+	private const val MAXIMUM_BYTES = 64L * 1024 * 1024
+	private const val HEAP_FRACTION = 2
 
 	/** Returns the amount of media data the player is allowed to hold in memory. */
 	@JvmStatic
