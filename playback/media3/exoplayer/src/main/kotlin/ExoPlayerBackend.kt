@@ -17,7 +17,6 @@ import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.Tracks
 import androidx.media3.common.VideoSize
 import androidx.media3.common.text.CueGroup
-import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
@@ -95,6 +94,9 @@ class ExoPlayerBackend(
 	 * can be compared.
 	 */
 	private var playbackRequestedAtMs: Long? = null
+
+	/** Whether the first drawn subtitle cue of the current item was logged. */
+	private var loggedCues = false
 
 
 	/**
@@ -186,12 +188,6 @@ class ExoPlayerBackend(
 				// measurement is used to request a bitrate the device can sustain.
 				player.addAnalyticsListener(ThroughputAnalyticsListener(context))
 
-				player.addAnalyticsListener(object : AnalyticsListener {
-					override fun onCues(eventTime: AnalyticsListener.EventTime, cueGroup: CueGroup) {
-						Timber.i("Subtitle cue group: %d cues", cueGroup.cues.size)
-					}
-				})
-
 				if (exoPlayerOptions.enableDebugLogging) {
 					player.addAnalyticsListener(EventLogger())
 				}
@@ -224,7 +220,10 @@ class ExoPlayerBackend(
 
 		override fun onCues(cueGroup: CueGroup) {
 			val cues = cueGroup.cues
-			Timber.i("Subtitle cues received: %d (view %s)", cues.size, subtitleView?.let { "${it.width}x${it.height}" } ?: "none")
+			if (cues.isNotEmpty() && !loggedCues) {
+				loggedCues = true
+				Timber.i("Subtitle cues drawn in %dx%d", subtitleView?.width ?: 0, subtitleView?.height ?: 0)
+			}
 			subtitleView?.setCues(cues)
 		}
 
@@ -250,6 +249,7 @@ class ExoPlayerBackend(
 			// item changes. The tracks of the new item are not known yet, the selection is
 			// applied when they arrive.
 			currentTracks = null
+			loggedCues = false
 		}
 
 		override fun onTracksChanged(tracks: Tracks) {
@@ -430,6 +430,8 @@ class ExoPlayerBackend(
 	override fun setSubtitlesEnabled(enabled: Boolean) {
 		if (subtitlesEnabled == enabled) return
 		subtitlesEnabled = enabled
+		Timber.i("Subtitles enabled: %s", enabled)
+		loggedCues = false
 		currentTracks?.let(::applySubtitleSelection)
 	}
 
