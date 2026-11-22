@@ -606,7 +606,8 @@ public class PlaybackController implements PlaybackControllerNotifiable {
                 mFragment.getContext(),
                 userPreferences.getValue(),
                 get(ServerVersion.class),
-                getSourceVideoBitrate(currentMediaSource)
+                getSourceVideoBitrate(currentMediaSource),
+                getContainerBitrate(currentMediaSource)
         );
         internalOptions.setProfile(internalProfile);
         return internalOptions;
@@ -630,6 +631,24 @@ public class PlaybackController implements PlaybackControllerNotifiable {
         }
 
         return null;
+    }
+
+    /**
+     * The bitrate of the whole source file, every track included.
+     *
+     * The server compares the requested bitrate with the bitrate of the container and not
+     * with the bitrate of the video stream, so a file that carries several audio tracks is
+     * transcoded when the request only covers the video and one audio track. The bitrate of
+     * the container is therefore part of the request as well.
+     */
+    @Nullable
+    private Integer getContainerBitrate(@Nullable MediaSourceInfo mediaSource) {
+        if (mediaSource == null || mediaSource.getBitrate() == null) return null;
+
+        long bitrate = mediaSource.getBitrate();
+        if (bitrate <= 0 || bitrate > Integer.MAX_VALUE) return null;
+
+        return (int) bitrate;
     }
 
     private boolean shouldPreferServerTranscoding(@Nullable MediaSourceInfo mediaSource) {

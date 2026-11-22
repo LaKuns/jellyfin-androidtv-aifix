@@ -2,6 +2,7 @@ package org.jellyfin.playback.media3.exoplayer
 
 import android.app.ActivityManager
 import android.content.Context
+import android.os.SystemClock
 import android.view.ViewGroup
 import androidx.annotation.OptIn
 import androidx.core.content.getSystemService
@@ -10,6 +11,8 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
+import androidx.media3.common.TrackGroup
+import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.Tracks
 import androidx.media3.common.VideoSize
@@ -32,6 +35,7 @@ import io.github.peerless2012.ass.media.parser.AssSubtitleParserFactory
 import io.github.peerless2012.ass.media.type.AssRenderType
 import io.github.peerless2012.ass.media.widget.AssSubtitleView
 import org.jellyfin.playback.core.backend.BasePlayerBackend
+import org.jellyfin.playback.core.backend.SubtitleTrackBackend
 import org.jellyfin.playback.core.mediastream.MediaStream
 import org.jellyfin.playback.core.mediastream.PlayableMediaStream
 import org.jellyfin.playback.core.mediastream.mediaStream
@@ -48,6 +52,7 @@ import org.jellyfin.playback.core.ui.PlayerSurfaceView
 import org.jellyfin.playback.media3.exoplayer.support.getPlaySupportReport
 import org.jellyfin.playback.media3.exoplayer.support.toFormats
 import timber.log.Timber
+import java.util.Locale
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -55,12 +60,11 @@ import kotlin.time.Duration.Companion.milliseconds
 class ExoPlayerBackend(
 	private val context: Context,
 	private val exoPlayerOptions: ExoPlayerOptions,
-) : BasePlayerBackend() {
+) : BasePlayerBackend(), SubtitleTrackBackend {
 	companion object {
 		const val TS_SEARCH_BYTES_LM = TsExtractor.TS_PACKET_SIZE * 1800
 		const val TS_SEARCH_BYTES_HM = TsExtractor.DEFAULT_TIMESTAMP_SEARCH_BYTES
 		const val MEDIA_ITEM_COUNT_MAX = 10
-
 	}
 
 	private var currentStream: PlayableMediaStream? = null
@@ -69,6 +73,26 @@ class ExoPlayerBackend(
 	private val audioAttributeState = AudioAttributeState()
 	private val timedEventState = TimedEventState()
 	private var lastKnownDuration: Duration? = null
+
+	/**
+	 * The tracks of the item that is loaded, kept so the subtitle selection can be applied
+	 * again when the user turns the subtitles on or off.
+	 */
+	private var currentTracks: Tracks? = null
+
+	/**
+	 * Whether the subtitles of the current item are turned on. They are on by default: a
+	 * film that carries a text track is meant to show it, unlike the old player the user
+	 * had to pick a track for.
+	 */
+	private var subtitlesEnabled = true
+
+	/**
+	 * The moment the playback of the current item was requested, used to report how long
+	 * the first frame took. The old player reports the same measurement, so both players
+	 * can be compared.
+	 */
+	private var playbackRequestedAtMs: Long? = null
 
 
 	private val assHandler by lazy {
@@ -204,6 +228,28 @@ class ExoPlayerBackend(
 		override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
 			val queueEntry = mediaItem?.localConfiguration?.tag as? QueueEntry
 			audioPipeline.normalizationGain = queueEntry?.normalizationGain
+
+			// The subtitle selection belongs to the item, so it is applied again when the
+			// item changes. The tracks of the new item are not known yet, the selection is
+			// applied when they arrive.
+			currentTracks = null
+		}
+
+		override fun onTracksChanged(tracks: Tracks) {
+			currentTracks = tracks
+			applySubtitleSelection(tracks)
+		}
+
+		override fun onRenderedFirstFrame() {
+			val requestedAt = playbackRequestedAtMs ?: return
+			playbackRequestedAtMs = null
+
+			val elapsed = SystemClock.elapsedRealtime() - requestedAt
+			val method = when {
+				currentStream?.url?.contains(".m3u8") != false -> "Transcode"
+				else -> "DirectPlay"
+			}
+			Timber.i("Playback rendered first frame using %s in %d ms", method, elapsed)
 		}
 
 		override fun onTimelineChanged(timeline: Timeline, reason: Int) {
@@ -305,6 +351,7 @@ class ExoPlayerBackend(
 
 		// Enjoy!
 		Timber.i("Playing ${item.mediaStream?.url}")
+		playbackRequestedAtMs = SystemClock.elapsedRealtime()
 		exoPlayer.play()
 	}
 
@@ -351,5 +398,76 @@ class ExoPlayerBackend(
 
 	override fun setTimedEvents(timedEvents: List<TimedEvent>) {
 		timedEventState.setTimedEvents(exoPlayer, timedEvents)
+	}
+
+	override fun isSubtitlesEnabled(): Boolean = subtitlesEnabled
+
+	override fun setSubtitlesEnabled(enabled: Boolean) {
+		if (subtitlesEnabled == enabled) return
+		subtitlesEnabled = enabled
+		currentTracks?.let(::applySubtitleSelection)
+	}
+
+	/**
+	 * Applies the subtitle selection to the player.
+	 *
+	 * ExoPlayer does not select a text track on its own: a track is only rendered when it
+	 * is selected, and the default selection prefers no subtitles. A film that carries a
+	 * subtitle is played with its subtitles here, unless the user turned them off.
+	 */
+	private fun applySubtitleSelection(tracks: Tracks) {
+		val builder = exoPlayer.trackSelectionParameters.buildUpon()
+			.clearOverridesOfType(C.TRACK_TYPE_TEXT)
+			.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !subtitlesEnabled)
+
+		if (subtitlesEnabled) {
+			val textGroups = tracks.groups.filter { group ->
+				group.type == C.TRACK_TYPE_TEXT &&
+					(0 until group.length).any(group::isTrackSupported)
+			}
+
+			chooseTextTrack(textGroups)?.let { (group, index) ->
+				builder.setOverrideForType(TrackSelectionOverride(group, index))
+			}
+		}
+
+		exoPlayer.trackSelectionParameters = builder.build()
+	}
+
+	/**
+	 * Picks the text track that is shown.
+	 *
+	 * The language of the device wins. A track without a language is taken next, and the
+	 * first track that the device can render is the last choice. A device that is set to
+	 * Chinese prefers the track that is labelled as simplified Chinese: films often carry
+	 * both variants, and the wrong one is worse than none.
+	 */
+	private fun chooseTextTrack(groups: List<Tracks.Group>): Pair<TrackGroup, Int>? {
+		val candidates = groups.flatMap { group ->
+			(0 until group.length)
+				.filter(group::isTrackSupported)
+				.map { index -> group.mediaTrackGroup to index }
+		}
+		if (candidates.isEmpty()) return null
+
+		val deviceLanguage = Locale.getDefault().language.lowercase()
+
+		if (deviceLanguage.startsWith("zh")) {
+			val simplifiedMarkers = listOf("简", "gb", "chs")
+			candidates.firstOrNull { (group, index) ->
+				val label = group.getFormat(index).label.orEmpty().lowercase()
+				simplifiedMarkers.any(label::contains)
+			}?.let { return it }
+		}
+
+		candidates.firstOrNull { (group, index) ->
+			group.getFormat(index).language?.lowercase() == deviceLanguage
+		}?.let { return it }
+
+		candidates.firstOrNull { (group, index) ->
+			group.getFormat(index).language == null
+		}?.let { return it }
+
+		return candidates.first()
 	}
 }

@@ -19,4 +19,18 @@ class PlaybackThroughputTest : FunSpec({
 		PlaybackThroughput.usableFraction(1_654) shouldBe PlaybackThroughput.usableFraction(PlaybackThroughput.MAX_LINK_LATENCY_MS)
 		PlaybackThroughput.usableFraction(Long.MAX_VALUE) shouldBe PlaybackThroughput.usableFraction(PlaybackThroughput.MAX_LINK_LATENCY_MS)
 	}
+
+	test("a single audio track is covered by the bitrate of the video and the headroom") {
+		PlaybackThroughput.getRequiredBitrate(5_000_000, 5_200_000) shouldBe 5_768_000
+	}
+
+	test("a file with several audio tracks is covered by the bitrate of the container") {
+		// The film carries six audio tracks, so the container is above the video bitrate
+		// and the request has to cover the container as well.
+		PlaybackThroughput.getRequiredBitrate(5_188_393, 7_369_638) shouldBe 7_369_638
+	}
+
+	test("an unknown container keeps the bitrate of the video and the headroom") {
+		PlaybackThroughput.getRequiredBitrate(5_000_000, null) shouldBe 5_768_000
+	}
 })

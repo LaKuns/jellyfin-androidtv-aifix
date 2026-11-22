@@ -241,10 +241,11 @@ object PlaybackThroughput {
 	 *
 	 * @param context Used to read the measurements
 	 * @param sourceBitrate The bitrate of the video stream of the source file in bits per second
+	 * @param containerBitrate The bitrate of the whole source file in bits per second
 	 * @return The bitrate in bits per second
 	 */
 	@JvmStatic
-	fun getStreamBitrateLimit(context: Context, sourceBitrate: Int?): Int {
+	fun getStreamBitrateLimit(context: Context, sourceBitrate: Int?, containerBitrate: Int? = null): Int {
 		val ceiling = getStreamBitrateLimit(context)
 		if (sourceBitrate == null || sourceBitrate <= 0) return ceiling
 
@@ -254,7 +255,7 @@ object PlaybackThroughput {
 		// to the bitrate of the source. Without it the video bitrate that reaches
 		// the server stays below the bitrate of the source and the server scales
 		// the video down to the next step of its resolution ladder.
-		val required = sourceBitrate + AUDIO_HEADROOM
+		val required = getRequiredBitrate(sourceBitrate, containerBitrate)
 
 		// The connection carries the bitrate of the source, so the resolution of
 		// the source is requested.
@@ -276,6 +277,24 @@ object PlaybackThroughput {
 		// one.
 		return ceiling
 	}
+
+	/**
+	 * The bitrate a request has to carry to cover the source file.
+	 *
+	 * The server compares the requested bitrate with the bitrate of the whole container,
+	 * which counts every track of the file. A file with several audio tracks needs a
+	 * request that covers all of them: a request that only covers the video and one
+	 * audio track is below the bitrate of the file, so the file is transcoded although
+	 * the connection carries it, and an audio track that the device decodes itself is
+	 * re-encoded without a reason.
+	 *
+	 * @param sourceVideoBitrate The bitrate of the video stream in bits per second
+	 * @param containerBitrate The bitrate of the whole file in bits per second
+	 * @return The bitrate in bits per second
+	 */
+	@JvmStatic
+	fun getRequiredBitrate(sourceVideoBitrate: Int, containerBitrate: Int?): Int =
+		maxOf(sourceVideoBitrate + AUDIO_HEADROOM, containerBitrate ?: 0)
 
 	/**
 	 * The upper bound of the bitrate that may be requested from the server.

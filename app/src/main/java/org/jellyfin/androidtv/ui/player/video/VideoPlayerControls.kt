@@ -46,6 +46,7 @@ import org.jellyfin.androidtv.ui.base.popover.Popover
 import org.jellyfin.androidtv.ui.composable.rememberPlayerPositionInfo
 import org.jellyfin.androidtv.ui.player.base.PlayerSeekbar
 import org.jellyfin.playback.core.PlaybackManager
+import org.jellyfin.playback.core.backend.SubtitleTrackBackend
 import org.jellyfin.playback.core.model.PlayState
 import org.jellyfin.playback.core.queue.queue
 import org.jellyfin.playback.jellyfin.queue.baseItem
@@ -79,6 +80,7 @@ fun VideoPlayerControls(
 			Spacer(Modifier.weight(1f))
 
 			PlaybackInfoButton(onClick = onPlaybackInfoClick)
+			SubtitleButton(playbackManager)
 			if (playState == PlayState.PAUSED) SelectEpisodeButton(playbackManager)
 
 			MoreOptionsButton {
@@ -303,6 +305,25 @@ private fun MoreOptionsButton(
 		) {
 			content()
 		}
+	}
+}
+
+@Composable
+private fun SubtitleButton(playbackManager: PlaybackManager) {
+	val backend = playbackManager.backend as? SubtitleTrackBackend ?: return
+	var enabled by remember { mutableStateOf(backend.isSubtitlesEnabled()) }
+
+	IconButton(
+		onClick = {
+			enabled = !enabled
+			backend.setSubtitlesEnabled(enabled)
+		},
+	) {
+		Icon(
+			imageVector = ImageVector.vectorResource(R.drawable.ic_subtitles),
+			contentDescription = stringResource(R.string.lbl_subtitle_track),
+			tint = LocalTextStyle.current.color.copy(alpha = if (enabled) 1f else 0.4f),
+		)
 	}
 }
 

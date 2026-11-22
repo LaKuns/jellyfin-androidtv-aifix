@@ -77,6 +77,7 @@ fun createDeviceProfile(
 	userPreferences: UserPreferences,
 	serverVersion: ServerVersion,
 	sourceBitrate: Int? = null,
+	containerBitrate: Int? = null,
 ) = PerformanceProfile.isLowPerformanceDevice(context).let { lowPerformanceDevice ->
 	// The device profile answers the question "what may the server send to this
 	// device". A format that can only be decoded in software is not playable on
@@ -114,7 +115,7 @@ fun createDeviceProfile(
 	// The bitrate of the source file is taken into account as well: the server scales
 	// a transcoded stream down when it is asked for less than the bitrate of the
 	// source, which costs the resolution of the original.
-	val throughputLimit = PlaybackThroughput.getStreamBitrateLimit(context, sourceBitrate)
+	val throughputLimit = PlaybackThroughput.getStreamBitrateLimit(context, sourceBitrate, containerBitrate)
 
 	// A device that is fast enough plays the resolution of the source: the video pipeline
 	// scales a 4K stream down to a 1080p screen for free, while asking the server for a
@@ -142,7 +143,7 @@ fun createDeviceProfile(
 				// resolution the file was stored with.
 				sourceBitrate != null -> minOf(
 					deviceLimit,
-					sourceBitrate + PlaybackThroughput.AUDIO_HEADROOM,
+					PlaybackThroughput.getRequiredBitrate(sourceBitrate, containerBitrate),
 				)
 				// Without any measurement a conservative value is used, TV boxes are
 				// usually limited by their wifi connection.
