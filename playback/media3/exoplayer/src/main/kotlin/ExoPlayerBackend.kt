@@ -29,6 +29,7 @@ import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.media3.extractor.ts.TsExtractor
 import androidx.media3.ui.SubtitleView
 import io.github.peerless2012.ass.media.AssHandler
+import io.github.peerless2012.ass.media.AssHandlerConfig
 import io.github.peerless2012.ass.media.factory.AssRenderersFactory
 import io.github.peerless2012.ass.media.kt.withAssMkvSupport
 import io.github.peerless2012.ass.media.parser.AssSubtitleParserFactory
@@ -95,8 +96,15 @@ class ExoPlayerBackend(
 	private var playbackRequestedAtMs: Long? = null
 
 
+	/**
+	 * Renders the ASS subtitles into text cues instead of an overlay surface. The overlay
+	 * draws a full frame bitmap for every displayed frame, which filled the heap on a 4K
+	 * film within three minutes on the box this app is built for, and the overlay surface is
+	 * not visible above the video surface in this player. The cues are drawn by the
+	 * subtitle view the player attaches, the same way the old player draws them.
+	 */
 	private val assHandler by lazy {
-		AssHandler(AssRenderType.OVERLAY_OPEN_GL)
+		AssHandler(AssRenderType.CUES, AssHandlerConfig(10_000, 128, 0))
 	}
 
 	private val exoPlayer by lazy {
@@ -208,7 +216,9 @@ class ExoPlayerBackend(
 		}
 
 		override fun onCues(cueGroup: CueGroup) {
-			subtitleView?.setCues(cueGroup.cues)
+			val cues = cueGroup.cues
+			if (cues.isNotEmpty()) Timber.i("Subtitle cues received: %d (view %s)", cues.size, subtitleView?.let { "${it.width}x${it.height}" } ?: "none")
+			subtitleView?.setCues(cues)
 		}
 
 		override fun onPlaybackStateChanged(playbackState: Int) {
@@ -246,8 +256,10 @@ class ExoPlayerBackend(
 
 			val elapsed = SystemClock.elapsedRealtime() - requestedAt
 			val method = when {
-				currentStream?.url?.contains(".m3u8") != false -> "Transcode"
-				else -> "DirectPlay"
+				// An HLS playlist means the server had to rebuild at least part of the file,
+				// the plain file url means the file was sent as it is.
+				currentStream?.url?.contains(".m3u8") != false -> "HLS"
+				else -> "Direct"
 			}
 			Timber.i("Playback rendered first frame using %s in %d ms", method, elapsed)
 		}
@@ -276,13 +288,19 @@ class ExoPlayerBackend(
 		if (surfaceView != null) {
 			if (subtitleView == null) {
 				subtitleView = SubtitleView(surfaceView.context).apply {
-					if (exoPlayerOptions.enableLibass) {
+					// The view is created here and not by a PlayerView, so the text size has to be
+					// set explicitly, otherwise the cues are one pixel high.
+					setFractionalTextSize(SubtitleView.DEFAULT_TEXT_SIZE_FRACTION)
+					if (exoPlayerOptions.enableLibass && assHandler.renderType != AssRenderType.CUES) {
 						addView(AssSubtitleView(surfaceView.context, assHandler))
 					}
 				}
 			}
 
 			surfaceView.addView(subtitleView)
+			surfaceView.post {
+				Timber.i("Subtitle view attached: %dx%d", subtitleView?.width ?: 0, subtitleView?.height ?: 0)
+			}
 		} else {
 			(subtitleView?.parent as? ViewGroup)?.removeView(subtitleView)
 			subtitleView = null
@@ -426,7 +444,9 @@ class ExoPlayerBackend(
 					(0 until group.length).any(group::isTrackSupported)
 			}
 
-			chooseTextTrack(textGroups)?.let { (group, index) ->
+			val chosen = chooseTextTrack(textGroups)
+			Timber.i("Subtitle selection: %d text groups, chosen %s", textGroups.size, chosen?.second ?: "none")
+			chosen?.let { (group, index) ->
 				builder.setOverrideForType(TrackSelectionOverride(group, index))
 			}
 		}
