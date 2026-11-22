@@ -153,6 +153,12 @@ class ExoPlayerBackend(
 			else renderersFactory
 		}
 
+		val targetBufferBytes = PlaybackBufferSizing.targetBufferBytes()
+		Timber.i(
+			"New player load control: target buffer %d bytes, heap %d bytes",
+			targetBufferBytes,
+			Runtime.getRuntime().maxMemory(),
+		)
 		val loadControl = DefaultLoadControl.Builder()
 			.setBufferDurationsMs(
 				exoPlayerOptions.minBufferDuration?.inWholeMilliseconds?.toInt() ?: DefaultLoadControl.DEFAULT_MIN_BUFFER_MS,
@@ -160,11 +166,11 @@ class ExoPlayerBackend(
 				exoPlayerOptions.bufferForPlaybackDuration?.inWholeMilliseconds?.toInt() ?: DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_MS,
 				exoPlayerOptions.bufferForPlaybackAfterRebufferDuration?.inWholeMilliseconds?.toInt() ?: DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS,
 			)
-			// Without this the load control targets a byte count first and only uses the
-			// durations above as a fallback, so bufferForPlaybackDuration was not actually
-			// deciding how long playback waits before showing a frame after a seek.
-			.setPrioritizeTimeOverSizeThresholds(true)
-			.setTargetBufferBytes(PlaybackBufferSizing.targetBufferBytes())
+			// The byte target must win over the durations, otherwise the loader keeps filling
+			// until the heap is exhausted (the media3 default target is about 144 MB, which is
+			// more than the 128 MB heap of most TV boxes).
+			.setPrioritizeTimeOverSizeThresholds(false)
+			.setTargetBufferBytes(targetBufferBytes)
 			.build()
 
 		ExoPlayer.Builder(context)
