@@ -119,6 +119,9 @@ public class VideoManager {
     private final UserPreferences userPreferences = KoinJavaComponent.get(UserPreferences.class);
     private final HttpDataSource.Factory exoPlayerHttpDataSourceFactory = KoinJavaComponent.get(HttpDataSource.Factory.class);
 
+    /** Number of players that have been created and not released yet, used to find leaks. */
+    private static final java.util.concurrent.atomic.AtomicInteger LIVE_PLAYERS = new java.util.concurrent.atomic.AtomicInteger();
+
     public VideoManager(@NonNull Activity activity, @NonNull View view, @NonNull PlaybackOverlayFragmentHelper helper) {
         mActivity = activity;
         _helper = helper;
@@ -144,6 +147,7 @@ public class VideoManager {
                 : null;
 
         mExoPlayer = configureExoplayerBuilder(activity, assHandler).build();
+        Timber.i("Player created, live players: %d", LIVE_PLAYERS.incrementAndGet());
 
         if (userPreferences.get(UserPreferences.Companion.getDebuggingEnabled())) {
             mExoPlayer.addAnalyticsListener(new EventLogger());
@@ -756,7 +760,19 @@ public class VideoManager {
             mExoPlayerView.setPlayer(null);
             mExoPlayer.release();
             mExoPlayer = null;
+            Timber.i("Player released, live players: %d", LIVE_PLAYERS.decrementAndGet());
         }
+    }
+
+    /**
+     * Current buffer state of the player, logged to find why the memory of the player grows.
+     */
+    public String describeBufferState() {
+        if (mExoPlayer == null) return "no player";
+
+        return "pos=" + mExoPlayer.getCurrentPosition()
+                + " buffered=" + mExoPlayer.getBufferedPosition()
+                + " totalBuffered=" + mExoPlayer.getTotalBufferedDuration();
     }
 
     int normalWidth;

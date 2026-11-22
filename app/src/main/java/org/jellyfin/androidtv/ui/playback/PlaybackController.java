@@ -1346,6 +1346,9 @@ public class PlaybackController implements PlaybackControllerNotifiable {
             public void run() {
                 if (isPlaying()) {
                     refreshCurrentPosition();
+                    if (mVideoManager != null) {
+                        Timber.i("Buffer state: %s", mVideoManager.describeBufferState());
+                    }
                     long currentTime = isLiveTv ? getTimeShiftedProgress() : mCurrentPosition;
 
                     reportingHelper.getValue().reportProgress(mFragment, PlaybackController.this, getCurrentlyPlayingItem(), getCurrentStreamInfo(), currentTime * 10000, false);
