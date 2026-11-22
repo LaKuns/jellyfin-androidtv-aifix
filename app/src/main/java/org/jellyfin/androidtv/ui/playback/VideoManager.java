@@ -398,16 +398,6 @@ public class VideoManager {
                     .setTargetBufferBytes(targetBufferBytes)
                     .build();
         } else {
-            // Keep the durations inside the byte cap: media3 stops loading when the allocated
-            // bytes reach the target, and with the default 50 second minimum a high bitrate
-            // stream can never reach it, which media3 reports as a stuck player. Ten seconds of
-            // minimum and thirty seconds of maximum fit into a quarter of the heap up to a
-            // bitrate of about 25 Mbit/s.
-            // A transcoded stream is served as HLS: its segments are requested one by one and a
-            // byte cap that stops the loader while the buffer is thin makes media3 report
-            // "Player stuck buffering and not loading" after four seconds. Fifty seconds of
-            // duration fit inside the cap at the bitrates of this box, so the loader keeps
-            // working and the cap only matters for a stream that is faster than that.
             loadControl = new DefaultLoadControl.Builder()
                     .setBufferDurationsMs(50_000, 50_000, 2_500, 5_000)
                     .setTargetBufferBytes(targetBufferBytes)
