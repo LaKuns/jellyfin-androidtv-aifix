@@ -44,6 +44,10 @@ public final class PlaybackQualityMonitor {
 	 */
 	private static final long STARTUP_SETTLE_MS = 4_000L;
 
+	/** The offset is also reported for the last report interval, which shows a drift that a cumulative average hides. */
+	private volatile long windowSamples = 0;
+	private volatile long windowSumOffsetUs = 0;
+
 	private final ExoPlayer player;
 	private final boolean enabled;
 	private final Handler handler = new Handler(Looper.getMainLooper());
@@ -128,12 +132,18 @@ public final class PlaybackQualityMonitor {
 			maxAbsOffsetUs = Math.max(maxAbsOffsetUs, Math.abs(offsetUs));
 			maxOffsetUs = Math.max(maxOffsetUs, offsetUs);
 			minOffsetUs = Math.min(minOffsetUs, offsetUs);
+
+			windowSamples++;
+			windowSumOffsetUs += offsetUs;
 		}
 
 		long averageAbsUs = samples == 0 ? 0 : sumAbsOffsetUs / samples;
+		long windowAverageUs = windowSamples == 0 ? 0 : windowSumOffsetUs / windowSamples;
+		windowSamples = 0;
+		windowSumOffsetUs = 0;
 		Timber.i(String.format(Locale.ROOT,
-				"Quality: avOffset avg=%dms max=%dms range=[%dms,%dms] frames=%d dropped=%d underruns=%d",
-				averageAbsUs / 1_000, maxAbsOffsetUs / 1_000,
+				"Quality: avOffset avg=%dms win=%dms max=%dms range=[%dms,%dms] frames=%d dropped=%d underruns=%d",
+				averageAbsUs / 1_000, windowAverageUs / 1_000, maxAbsOffsetUs / 1_000,
 				minOffsetUs == Long.MAX_VALUE ? 0 : minOffsetUs / 1_000,
 				maxOffsetUs == Long.MIN_VALUE ? 0 : maxOffsetUs / 1_000,
 				frames, droppedFrames, audioUnderruns));
