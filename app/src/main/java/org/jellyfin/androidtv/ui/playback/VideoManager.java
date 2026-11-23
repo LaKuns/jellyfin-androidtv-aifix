@@ -360,7 +360,7 @@ public class VideoManager {
         // loading before the heap is full.
         int targetBufferBytes = org.jellyfin.playback.core.support.PlaybackBufferSizing.targetBufferBytes();
         Timber.i("Load control: target buffer %d bytes, heap %d bytes", targetBufferBytes, Runtime.getRuntime().maxMemory());
-        DefaultLoadControl loadControl;
+        androidx.media3.exoplayer.LoadControl loadControl;
         if (lowPerformanceDevice) {
             // Keep the allocator small enough for low-memory TV boxes. The server-side
             // profile limits expensive media, so a short buffer is enough to absorb normal
@@ -398,10 +398,11 @@ public class VideoManager {
                     .setTargetBufferBytes(targetBufferBytes)
                     .build();
         } else {
-            loadControl = new DefaultLoadControl.Builder()
-                    .setBufferDurationsMs(50_000, 50_000, 2_500, 5_000)
-                    .setTargetBufferBytes(targetBufferBytes)
-                    .build();
+            // A byte budget alone can deadlock the player when it is reached while the buffer is
+            // nearly empty: the loader stops, the buffer drains and media3 aborts the playback.
+            // This control keeps the budget but forces loading below a few seconds of buffered
+            // media so a stall can recover.
+            loadControl = new org.jellyfin.playback.media3.exoplayer.support.CappedLoadControl(targetBufferBytes);
         }
         exoPlayerBuilder.setLoadControl(loadControl);
 
