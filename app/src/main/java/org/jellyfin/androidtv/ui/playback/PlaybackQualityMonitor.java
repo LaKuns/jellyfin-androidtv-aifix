@@ -69,6 +69,8 @@ public final class PlaybackQualityMonitor {
 	private volatile long lastPresentationTimeUs = -1;
 	private volatile long lastFrameWallClockMs = -1;
 	private volatile long firstFrameWallClockMs = -1;
+	/** Wall clock (elapsed realtime) at which the renderer says the frame will be released to the display. */
+	private volatile long lastReleaseWallClockMs = -1;
 
 	private final Runnable report = new Runnable() {
 		@Override
@@ -99,9 +101,14 @@ public final class PlaybackQualityMonitor {
 			public void onVideoFrameAboutToBeRendered(long presentationTimeUs, long releaseTimeNs, @NonNull Format format, @Nullable android.media.MediaFormat mediaFormat) {
 				// never read the player here: it belongs to the thread that created it
 				frames++;
+				long nowMs = SystemClock.elapsedRealtime();
+				long nowNs = System.nanoTime();
 				lastPresentationTimeUs = presentationTimeUs;
-				lastFrameWallClockMs = SystemClock.elapsedRealtime();
-				if (firstFrameWallClockMs < 0) firstFrameWallClockMs = lastFrameWallClockMs;
+				lastFrameWallClockMs = nowMs;
+				// releaseTimeNs is in the nanoTime domain; convert it to the elapsed realtime domain so that the
+				// report can compare the frame against the audio clock at the moment the display receives it
+				lastReleaseWallClockMs = nowMs + (releaseTimeNs - nowNs) / 1_000_000L;
+				if (firstFrameWallClockMs < 0) firstFrameWallClockMs = nowMs;
 			}
 		};
 		player.setVideoFrameMetadataListener(videoFrameMetadataListener);
@@ -118,13 +125,15 @@ public final class PlaybackQualityMonitor {
 
 		long presentationTimeUs = lastPresentationTimeUs;
 		long frameWallClockMs = lastFrameWallClockMs;
-		if (presentationTimeUs >= 0 && frameWallClockMs >= 0
+		// the display receives the frame at the release time, not at the callback time
+		long referenceWallClockMs = lastReleaseWallClockMs > 0 ? lastReleaseWallClockMs : frameWallClockMs;
+		if (presentationTimeUs >= 0 && referenceWallClockMs >= 0
 				&& firstFrameWallClockMs >= 0
 				&& SystemClock.elapsedRealtime() - firstFrameWallClockMs >= STARTUP_SETTLE_MS
 				&& player.getPlaybackState() == androidx.media3.common.Player.STATE_READY) {
 			long nowMs = SystemClock.elapsedRealtime();
 			long positionNowMs = player.getCurrentPosition();
-			long audioClockAtFrameMs = positionNowMs - (nowMs - frameWallClockMs);
+			long audioClockAtFrameMs = positionNowMs - (nowMs - referenceWallClockMs);
 			long offsetUs = presentationTimeUs - audioClockAtFrameMs * 1_000L;
 
 			samples++;
@@ -162,6 +171,7 @@ public final class PlaybackQualityMonitor {
 		minOffsetUs = Long.MAX_VALUE;
 		lastPresentationTimeUs = -1;
 		lastFrameWallClockMs = -1;
+		lastReleaseWallClockMs = -1;
 		firstFrameWallClockMs = -1;
 	}
 
