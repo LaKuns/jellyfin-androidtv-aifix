@@ -149,6 +149,7 @@ public class VideoManager {
 
         mExoPlayer = configureExoplayerBuilder(activity, assHandler).build();
         Timber.i("Player created, live players: %d", LIVE_PLAYERS.incrementAndGet());
+        AudioCapabilityProbe.dump(activity);
         // measure the offset of the video against the audio clock, the dropped frames and the audio underruns
         mQualityMonitor = new PlaybackQualityMonitor(mExoPlayer, userPreferences.get(UserPreferences.Companion.getDebuggingEnabled()));
 
