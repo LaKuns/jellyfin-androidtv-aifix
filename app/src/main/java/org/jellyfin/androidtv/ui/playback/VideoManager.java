@@ -101,6 +101,7 @@ public class VideoManager {
     private PlaybackOverlayFragmentHelper _helper;
     public ExoPlayer mExoPlayer;
     private PlayerView mExoPlayerView;
+    private PlaybackQualityMonitor mQualityMonitor;
     /** Indeterminate spinner drawn over the video surface while nothing can be shown yet. */
     private View bufferingView;
     private Handler mHandler = new Handler();
@@ -148,6 +149,8 @@ public class VideoManager {
 
         mExoPlayer = configureExoplayerBuilder(activity, assHandler).build();
         Timber.i("Player created, live players: %d", LIVE_PLAYERS.incrementAndGet());
+        // measure the offset of the video against the audio clock, the dropped frames and the audio underruns
+        mQualityMonitor = new PlaybackQualityMonitor(mExoPlayer, userPreferences.get(UserPreferences.Companion.getDebuggingEnabled()));
 
         if (userPreferences.get(UserPreferences.Companion.getDebuggingEnabled())) {
             mExoPlayer.addAnalyticsListener(new EventLogger());
@@ -804,6 +807,10 @@ public class VideoManager {
         cancelStartupBufferingTimeout();
         _helper.setScreensaverLock(false);
         if (mExoPlayer != null) {
+            if (mQualityMonitor != null) {
+                mQualityMonitor.release();
+                mQualityMonitor = null;
+            }
             mExoPlayerView.setPlayer(null);
             mExoPlayer.release();
             mExoPlayer = null;
