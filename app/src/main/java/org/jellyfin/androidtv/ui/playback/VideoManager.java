@@ -143,7 +143,7 @@ public class VideoManager {
         // the video size, so a limit smaller than the video shrinks the subtitles and moves
         // them towards the upper left corner.
         AssHandler assHandler = assDirectPlay
-                ? new AssHandler(AssRenderType.CUES, new AssHandlerConfig(10_000, 128, 0))
+                ? new AssHandler(AssRenderType.CUES, new AssHandlerConfig(2_000, 8, 1920 * 1080))
                 : null;
 
         mExoPlayer = configureExoplayerBuilder(activity, assHandler).build();

@@ -108,7 +108,7 @@ class ExoPlayerBackend(
 	 * subtitle view the player attaches, the same way the old player draws them.
 	 */
 	private val assHandler by lazy {
-		AssHandler(AssRenderType.CUES, AssHandlerConfig(10_000, 128, 0))
+		AssHandler(AssRenderType.CUES, AssHandlerConfig(2_000, 8, 1920 * 1080))
 	}
 
 	private val exoPlayer by lazy {
