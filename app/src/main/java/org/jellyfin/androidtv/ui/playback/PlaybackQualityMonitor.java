@@ -2,6 +2,7 @@ package org.jellyfin.androidtv.ui.playback;
 
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -24,6 +25,12 @@ import timber.log.Timber;
  * sound and a negative one means it lags. A stable offset of a few dozen milliseconds is normal (the
  * renderer compensates the output latency of the display); a growing offset or a large spread means
  * the two clocks are drifting apart.</p>
+ *
+ * <p>The player can only be read from the thread that created it, so the frame callback only records
+ * the presentation time of the frame and the wall clock of the device. The offset is calculated by
+ * the report, which runs on the main thread: it takes the current position of the player and moves it
+ * back by the time that passed since the frame was handed to the renderer, which is the media time the
+ * audio clock was showing when that frame was rendered.</p>
  */
 @UnstableApi
 public final class PlaybackQualityMonitor {
@@ -37,9 +44,9 @@ public final class PlaybackQualityMonitor {
 	private int droppedFrames;
 	private int audioUnderruns;
 	private long frames;
+	private long samples;
 	private long sumAbsOffsetUs;
 	private long maxAbsOffsetUs;
-	private long lastOffsetUs = Long.MIN_VALUE;
 	private long maxOffsetUs = Long.MIN_VALUE;
 	private long minOffsetUs = Long.MAX_VALUE;
 	private final VideoFrameMetadataListener videoFrameMetadataListener;
@@ -47,6 +54,9 @@ public final class PlaybackQualityMonitor {
 	// the player reports these numbers on its own playback thread
 	private volatile int pendingDroppedFrames;
 	private volatile int pendingAudioUnderruns;
+	// written by the frame callback of the renderer thread, read by the report on the main thread
+	private volatile long lastPresentationTimeUs = -1;
+	private volatile long lastFrameWallClockMs = -1;
 
 	private final Runnable report = new Runnable() {
 		@Override
@@ -75,16 +85,10 @@ public final class PlaybackQualityMonitor {
 		videoFrameMetadataListener = new VideoFrameMetadataListener() {
 			@Override
 			public void onVideoFrameAboutToBeRendered(long presentationTimeUs, long releaseTimeNs, @NonNull Format format, @Nullable android.media.MediaFormat mediaFormat) {
-				// the audio clock is what the video has to follow, so compare the frame with it
-				long offsetUs = presentationTimeUs - player.getCurrentPosition() * 1_000L;
-				synchronized (PlaybackQualityMonitor.this) {
-					frames++;
-					sumAbsOffsetUs += Math.abs(offsetUs);
-					maxAbsOffsetUs = Math.max(maxAbsOffsetUs, Math.abs(offsetUs));
-					lastOffsetUs = offsetUs;
-					maxOffsetUs = Math.max(maxOffsetUs, offsetUs);
-					minOffsetUs = Math.min(minOffsetUs, offsetUs);
-				}
+				// never read the player here: it belongs to the thread that created it
+				frames++;
+				lastPresentationTimeUs = presentationTimeUs;
+				lastFrameWallClockMs = SystemClock.elapsedRealtime();
 			}
 		};
 		player.setVideoFrameMetadataListener(videoFrameMetadataListener);
@@ -99,7 +103,22 @@ public final class PlaybackQualityMonitor {
 		pendingDroppedFrames = 0;
 		pendingAudioUnderruns = 0;
 
-		long averageAbsUs = frames == 0 ? 0 : sumAbsOffsetUs / frames;
+		long presentationTimeUs = lastPresentationTimeUs;
+		long frameWallClockMs = lastFrameWallClockMs;
+		if (presentationTimeUs >= 0 && frameWallClockMs >= 0 && player.getPlaybackState() == androidx.media3.common.Player.STATE_READY) {
+			long nowMs = SystemClock.elapsedRealtime();
+			long positionNowMs = player.getCurrentPosition();
+			long audioClockAtFrameMs = positionNowMs - (nowMs - frameWallClockMs);
+			long offsetUs = presentationTimeUs - audioClockAtFrameMs * 1_000L;
+
+			samples++;
+			sumAbsOffsetUs += Math.abs(offsetUs);
+			maxAbsOffsetUs = Math.max(maxAbsOffsetUs, Math.abs(offsetUs));
+			maxOffsetUs = Math.max(maxOffsetUs, offsetUs);
+			minOffsetUs = Math.min(minOffsetUs, offsetUs);
+		}
+
+		long averageAbsUs = samples == 0 ? 0 : sumAbsOffsetUs / samples;
 		Timber.i(String.format(Locale.ROOT,
 				"Quality: avOffset avg=%dms max=%dms range=[%dms,%dms] frames=%d dropped=%d underruns=%d",
 				averageAbsUs / 1_000, maxAbsOffsetUs / 1_000,
@@ -114,11 +133,13 @@ public final class PlaybackQualityMonitor {
 		pendingDroppedFrames = 0;
 		pendingAudioUnderruns = 0;
 		frames = 0;
+		samples = 0;
 		sumAbsOffsetUs = 0;
 		maxAbsOffsetUs = 0;
-		lastOffsetUs = Long.MIN_VALUE;
 		maxOffsetUs = Long.MIN_VALUE;
 		minOffsetUs = Long.MAX_VALUE;
+		lastPresentationTimeUs = -1;
+		lastFrameWallClockMs = -1;
 	}
 
 	public void release() {
