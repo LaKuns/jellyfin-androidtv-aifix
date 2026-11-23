@@ -17,7 +17,6 @@ import org.jellyfin.androidtv.preference.constant.HdrOverrideMode
 import org.jellyfin.androidtv.util.AndroidVersion
 import org.jellyfin.androidtv.util.PerformanceProfile
 import org.jellyfin.playback.core.support.PlaybackThroughput
-import org.jellyfin.androidtv.util.profile.codec.isPassthroughAudioAvailable
 import org.jellyfin.sdk.model.ServerVersion
 import org.jellyfin.sdk.model.api.CodecType
 import org.jellyfin.sdk.model.api.DlnaProfileType
@@ -46,16 +45,22 @@ private fun UserPreferences.getHdrRangeTypesFor(mode: HdrOverrideMode): Set<Vide
 		.flatMapTo(mutableSetOf()) { it.videoRangeTypes }
 
 /**
- * Whether a format may be handed to the television or the receiver instead of being decoded.
+ * Whether a surround format may be sent to the device without the server touching it.
  *
- * A format is passed through when the device reports that its audio output supports it, or when
- * the user asked for it explicitly. The report of the device is the only source for the automatic
- * mode: a box that has no decoder for a format can still pass it through, and that is the normal
- * case for the surround formats on a TV box.
+ * The bundle ships the ffmpeg decoders, so every one of these formats can be played on any
+ * device: the player hands the bitstream to the television when the television decodes it,
+ * and falls back to the bundled decoder otherwise. Only an explicit "disable" asks the
+ * server for a transcode - either because the device cannot decode the format or because
+ * the user wants the audio downmixed.
+ *
+ * The output capabilities are deliberately not part of the automatic decision: the report
+ * of the AudioManager only describes what the audio HAL accepts as a bitstream. A box whose
+ * HAL announces nothing still plays these formats, and a box whose HDMI output advertises
+ * them does not necessarily decode them any better than the bundled decoder.
  */
-private fun UserPreferences.isBitstreamAudioEnabled(context: Context, format: BitstreamAudioFormat): Boolean =
+private fun UserPreferences.isBitstreamAudioEnabled(format: BitstreamAudioFormat): Boolean =
 	when (this[format.preference]) {
-		BitstreamAudioMode.AUTO -> isPassthroughAudioAvailable(context, format.mimeType)
+		BitstreamAudioMode.AUTO -> true
 		BitstreamAudioMode.ENABLE -> true
 		BitstreamAudioMode.DISABLE -> false
 	}
@@ -154,10 +159,10 @@ fun createDeviceProfile(
 				else -> deviceLimit
 			}
 		},
-		isAC3PrefEnabled = userPreferences.isBitstreamAudioEnabled(context, BitstreamAudioFormat.AC3),
-		isEAC3PrefEnabled = userPreferences.isBitstreamAudioEnabled(context, BitstreamAudioFormat.EAC3),
-		isDTSPrefEnabled = userPreferences.isBitstreamAudioEnabled(context, BitstreamAudioFormat.DTS),
-		isTrueHDPrefEnabled = userPreferences.isBitstreamAudioEnabled(context, BitstreamAudioFormat.TRUEHD),
+		isAC3PrefEnabled = userPreferences.isBitstreamAudioEnabled(BitstreamAudioFormat.AC3),
+		isEAC3PrefEnabled = userPreferences.isBitstreamAudioEnabled(BitstreamAudioFormat.EAC3),
+		isDTSPrefEnabled = userPreferences.isBitstreamAudioEnabled(BitstreamAudioFormat.DTS),
+		isTrueHDPrefEnabled = userPreferences.isBitstreamAudioEnabled(BitstreamAudioFormat.TRUEHD),
 		downMixAudio = userPreferences[UserPreferences.audioBehaviour] == AudioBehavior.DOWNMIX_TO_STEREO || downMixByDevice,
 		assDirectPlay = userPreferences[UserPreferences.assDirectPlay],
 		pgsDirectPlay = userPreferences[UserPreferences.pgsDirectPlay],
@@ -193,11 +198,10 @@ fun createDeviceProfile(
 	maxVideoHeight: Int? = null,
 	displayHdr: DisplayHdrCapabilities = DisplayHdrCapabilities(),
 ) = buildDeviceProfile {
-	// The formats that are handed to the television or the receiver are the only ones that need
-	// a decision: the user may enable or disable them, and in the automatic mode the device is
-	// asked whether its audio output supports them. A device without a decoder is not excluded,
-	// because a track does not have to be decoded to be played - passing it through is the
-	// normal way to play surround audio on a TV box.
+	// The surround formats are the only ones that need a decision: the user may enable or
+	// disable them. The automatic mode allows them, because the bundled ffmpeg decoders play
+	// every one of them - handing the bitstream to the television is a bonus, not a condition.
+	// A transcode is only requested when the user disabled the format.
 	val allowedAudioCodecs = when {
 		downMixAudio -> downmixSupportedAudioCodecs
 		else -> supportedAudioCodecs
