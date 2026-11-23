@@ -102,6 +102,7 @@ class PassthroughRenderersFactory @JvmOverloads constructor(
 
 	private var cachedCapabilities: AudioCapabilities? = null
 
+	@Suppress("DEPRECATION")
 	override fun buildAudioSink(
 		context: Context,
 		enableFloatOutput: Boolean,
@@ -112,7 +113,13 @@ class PassthroughRenderersFactory @JvmOverloads constructor(
 				cachedCapabilities = it
 			}
 
-		return DefaultAudioSink.Builder(context)
+		// `DefaultAudioSink.Builder.setAudioCapabilities` is only honoured while the builder has no
+		// Context: with a Context, media3 replaces the capabilities with the ones it probes from the
+		// framework, and that probe reports no pass-through profile for a HAL that only advertises a
+		// dynamic IEC61937 direct output. The context-less builder therefore keeps the capabilities
+		// that `AudioTrack.isDirectPlaybackSupported` reported, which is what decides whether the
+		// bitstream can be sent to the television.
+		return DefaultAudioSink.Builder()
 			.setAudioCapabilities(capabilities)
 			.setEnableFloatOutput(enableFloatOutput)
 			.setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
