@@ -528,6 +528,28 @@ public class VideoManager {
         return pos;
     }
 
+    /**
+     * Subtitle codecs that are rendered by libass on the client.
+     */
+    private static boolean isLibassSubtitleCodec(@Nullable String codec) {
+        return "ass".equalsIgnoreCase(codec) || "ssa".equalsIgnoreCase(codec);
+    }
+
+    /**
+     * Rewrites a subtitle delivery url to the webvtt variant, keeping the query string.
+     */
+    private static String toVttSubtitleUrl(@Nullable String url) {
+        if (url == null) return null;
+
+        int queryAt = url.indexOf('?');
+        String base = queryAt >= 0 ? url.substring(0, queryAt) : url;
+        String query = queryAt >= 0 ? url.substring(queryAt) : "";
+
+        int extensionAt = base.lastIndexOf('.');
+        if (extensionAt < 0) return url;
+
+        return base.substring(0, extensionAt) + ".vtt" + query;
+    }
     private int getSubtitleSelectionFlags(MediaStream mediaStream) {
         int flags = 0;
         if (mediaStream.isDefault()) flags &= C.SELECTION_FLAG_DEFAULT;
@@ -563,10 +585,19 @@ public class VideoManager {
                 if (mediaStream.getType() != MediaStreamType.SUBTITLE) continue;
 
                 if (mediaStream.getDeliveryMethod() == SubtitleDeliveryMethod.EXTERNAL) {
-                    Uri subtitleUri = Uri.parse(api.createUrl(mediaStream.getDeliveryUrl(), Collections.emptyMap(), Collections.emptyMap(), true));
+                    String subtitleUrl = mediaStream.getDeliveryUrl();
+                    String subtitleMimeType = VideoManagerHelperKt.getSubtitleMediaStreamCodec(mediaStream);
+                    // libass renders every cue up to the seek position on the loading thread, which stalls
+                    // playback for minutes on slower boxes. The server can convert the text format for us.
+                    if (isLibassSubtitleCodec(mediaStream.getCodec())) {
+                        Timber.i("Subtitle %d is served as vtt instead of %s to avoid the libass startup cost", mediaStream.getIndex(), mediaStream.getCodec());
+                        subtitleUrl = toVttSubtitleUrl(subtitleUrl);
+                        subtitleMimeType = "text/vtt";
+                    }
+                    Uri subtitleUri = Uri.parse(api.createUrl(subtitleUrl, Collections.emptyMap(), Collections.emptyMap(), true));
                     MediaItem.SubtitleConfiguration subtitleConfiguration = new MediaItem.SubtitleConfiguration.Builder(subtitleUri)
                             .setId("JF_EXTERNAL:" + String.valueOf(mediaStream.getIndex()))
-                            .setMimeType(VideoManagerHelperKt.getSubtitleMediaStreamCodec(mediaStream))
+                            .setMimeType(subtitleMimeType)
                             .setLanguage(mediaStream.getLanguage())
                             .setLabel(mediaStream.getDisplayTitle())
                             .setSelectionFlags(getSubtitleSelectionFlags(mediaStream))
