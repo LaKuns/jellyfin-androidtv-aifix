@@ -533,7 +533,8 @@ class ExoPlayerBackend(
 			if (name.isNotBlank()) parts.add(name)
 		}
 
-		val codec = when (format.sampleMimeType?.lowercase(Locale.ROOT)) {
+		val mimeType = format.sampleMimeType
+		val codec = when (mimeType?.lowercase(Locale.ROOT)) {
 			"audio/ac3" -> "AC-3"
 			"audio/eac3", "audio/eac3-joc" -> "E-AC3"
 			"audio/vnd.dts" -> "DTS"
@@ -545,7 +546,7 @@ class ExoPlayerBackend(
 			"audio/mpeg" -> "MP3"
 			"audio/vorbis" -> "Vorbis"
 			null -> null
-			else -> format.sampleMimeType.substringAfter('/').uppercase(Locale.ROOT)
+			else -> mimeType.substringAfter('/').uppercase(Locale.ROOT)
 		}
 		codec?.let(parts::add)
 
