@@ -321,7 +321,9 @@ public class VideoManager {
     private ExoPlayer.Builder configureExoplayerBuilder(Context context, AssHandler assHandler) {
         ExoPlayer.Builder exoPlayerBuilder = new ExoPlayer.Builder(context);
         boolean lowPerformanceDevice = PerformanceProfile.isLowPerformanceDevice(context);
-        DefaultRenderersFactory defaultRendererFactory = new DefaultRenderersFactory(context);
+        // The framework does not report the compressed formats of the HDMI pass-through output,
+        // so media3 would decode and downmix them to stereo; give it the formats the HAL accepts.
+        DefaultRenderersFactory defaultRendererFactory = new org.jellyfin.playback.media3.exoplayer.support.PassthroughRenderersFactory(context);
         // Software decoder fallback is useful on desktop-like devices, but on old TVs it
         // usually turns a media incompatibility into permanent dropped frames. The device
         // profile already asks the server to transcode those streams instead.
