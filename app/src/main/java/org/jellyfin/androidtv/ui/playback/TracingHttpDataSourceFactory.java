@@ -65,7 +65,7 @@ public final class TracingHttpDataSourceFactory implements HttpDataSource.Factor
 		}
 
 		@Override
-		public long open(@NonNull DataSpec dataSpec) throws IOException {
+		public long open(@NonNull DataSpec dataSpec) throws HttpDataSource.HttpDataSourceException {
 			openedAtMs = android.os.SystemClock.elapsedRealtime();
 			openedUri = dataSpec.uri.toString();
 			readBytes = 0;
@@ -81,7 +81,7 @@ public final class TracingHttpDataSourceFactory implements HttpDataSource.Factor
 		}
 
 		@Override
-		public int read(@NonNull byte[] buffer, int offset, int length) throws IOException {
+		public int read(@NonNull byte[] buffer, int offset, int length) throws HttpDataSource.HttpDataSourceException {
 			long startedAt = android.os.SystemClock.elapsedRealtime();
 			try {
 				int read = delegate.read(buffer, offset, length);
@@ -98,7 +98,7 @@ public final class TracingHttpDataSourceFactory implements HttpDataSource.Factor
 		}
 
 		@Override
-		public void close() throws IOException {
+		public void close() throws HttpDataSource.HttpDataSourceException {
 			Timber.i("HTTP[%d] close after %d ms, %d bytes: %s", id, android.os.SystemClock.elapsedRealtime() - openedAtMs, readBytes, openedUri);
 			delegate.close();
 		}
@@ -116,7 +116,7 @@ public final class TracingHttpDataSourceFactory implements HttpDataSource.Factor
 		}
 
 		@Override
-		public int getResponseCode() throws IOException {
+		public int getResponseCode() {
 			return delegate.getResponseCode();
 		}
 
