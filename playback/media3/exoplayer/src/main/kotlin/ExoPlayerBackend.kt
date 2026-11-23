@@ -7,6 +7,7 @@ import android.view.ViewGroup
 import androidx.annotation.OptIn
 import androidx.core.content.getSystemService
 import androidx.media3.common.C
+import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -35,6 +36,8 @@ import io.github.peerless2012.ass.media.kt.withAssMkvSupport
 import io.github.peerless2012.ass.media.parser.AssSubtitleParserFactory
 import io.github.peerless2012.ass.media.type.AssRenderType
 import io.github.peerless2012.ass.media.widget.AssSubtitleView
+import org.jellyfin.playback.core.backend.AudioTrack
+import org.jellyfin.playback.core.backend.AudioTrackBackend
 import org.jellyfin.playback.core.backend.BasePlayerBackend
 import org.jellyfin.playback.core.backend.SubtitleTrackBackend
 import org.jellyfin.playback.core.mediastream.MediaStream
@@ -62,7 +65,7 @@ import kotlin.time.Duration.Companion.milliseconds
 class ExoPlayerBackend(
 	private val context: Context,
 	private val exoPlayerOptions: ExoPlayerOptions,
-) : BasePlayerBackend(), SubtitleTrackBackend {
+) : BasePlayerBackend(), AudioTrackBackend, SubtitleTrackBackend {
 	companion object {
 		const val TS_SEARCH_BYTES_LM = TsExtractor.TS_PACKET_SIZE * 1800
 		const val TS_SEARCH_BYTES_HM = TsExtractor.DEFAULT_TIMESTAMP_SEARCH_BYTES
@@ -81,6 +84,13 @@ class ExoPlayerBackend(
 	 * again when the user turns the subtitles on or off.
 	 */
 	private var currentTracks: Tracks? = null
+
+	/**
+	 * The audio track the user picked for the current item, or null while the user has not
+	 * picked one and the player decides. The selection is applied again when the tracks of
+	 * the item arrive, and forgotten when the item changes.
+	 */
+	private var selectedAudioTrackId: String? = null
 
 	/**
 	 * Whether the subtitles of the current item are turned on. They are on by default: a
@@ -260,12 +270,14 @@ class ExoPlayerBackend(
 			// item changes. The tracks of the new item are not known yet, the selection is
 			// applied when they arrive.
 			currentTracks = null
+			selectedAudioTrackId = null
 			loggedCues = false
 		}
 
 		override fun onTracksChanged(tracks: Tracks) {
 			currentTracks = tracks
 			applySubtitleSelection(tracks)
+			applyAudioSelection(tracks)
 		}
 
 		override fun onRenderedFirstFrame() {
@@ -446,10 +458,113 @@ class ExoPlayerBackend(
 		currentTracks?.let(::applySubtitleSelection)
 	}
 
+	override fun getAudioTracks(): List<AudioTrack> {
+		val tracks = currentTracks ?: return emptyList()
+
+		return tracks.groups
+			.filter { group -> group.type == C.TRACK_TYPE_AUDIO }
+			.flatMap { group ->
+				(0 until group.length)
+					.filter(group::isTrackSupported)
+					.map { index ->
+						val format = group.mediaTrackGroup.getFormat(index)
+						AudioTrack(
+							id = audioTrackId(group.mediaTrackGroup, index),
+							label = audioTrackLabel(format, index),
+							isSelected = group.isTrackSelected(index),
+						)
+					}
+			}
+	}
+
+	override fun setAudioTrack(id: String) {
+		val tracks = currentTracks ?: return
+		val (group, index) = findAudioTrack(tracks, id) ?: run {
+			Timber.w("Audio track %s does not exist in the current item", id)
+			return
+		}
+
+		selectedAudioTrackId = id
+		applyAudioSelection(tracks)
+		Timber.i("Audio track selected: %s", audioTrackLabel(group.getFormat(index), index))
+	}
+
+	/**
+	 * Applies the audio track the user picked to the player.
+	 *
+	 * The pick is remembered so it can be applied again after the tracks are re-read, for
+	 * example when the player switches quality or rebuffers. Without a pick the player
+	 * keeps its own choice, which prefers the language of the device.
+	 */
+	private fun applyAudioSelection(tracks: Tracks) {
+		val id = selectedAudioTrackId ?: return
+		val (group, index) = findAudioTrack(tracks, id) ?: return
+
+		exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters.buildUpon()
+			.setOverrideForType(TrackSelectionOverride(group, index))
+			.build()
+	}
+
+	private fun findAudioTrack(tracks: Tracks, id: String): Pair<TrackGroup, Int>? =
+		tracks.groups
+			.filter { group -> group.type == C.TRACK_TYPE_AUDIO }
+			.flatMap { group -> (0 until group.length).map { index -> group.mediaTrackGroup to index } }
+			.firstOrNull { (group, index) -> audioTrackId(group, index) == id }
+
+	/**
+	 * Identifies a track inside the media that is loaded. The track group id of ExoPlayer is
+	 * stable for the lifetime of the item, so the same id can be used to select the track
+	 * again after the selection was lost.
+	 */
+	private fun audioTrackId(group: TrackGroup, index: Int): String = "${group.id}#$index"
+
+	/**
+	 * Builds the label of an audio track the way the user reads it: language, codec and
+	 * channel layout, for example "English · E-AC3 · 5.1". Only the parts that are known
+	 * are shown, and a track without any information falls back to its number.
+	 */
+	private fun audioTrackLabel(format: Format, index: Int): String {
+		val parts = ArrayList<String>(3)
+
+		format.label?.takeIf { label -> label.isNotBlank() }?.let(parts::add)
+
+		format.language?.let { language ->
+			val name = Locale(language).getDisplayLanguage(Locale.getDefault())
+			if (name.isNotBlank()) parts.add(name)
+		}
+
+		val codec = when (format.sampleMimeType?.lowercase(Locale.ROOT)) {
+			"audio/ac3" -> "AC-3"
+			"audio/eac3", "audio/eac3-joc" -> "E-AC3"
+			"audio/vnd.dts" -> "DTS"
+			"audio/vnd.dts.hd" -> "DTS-HD"
+			"audio/true-hd" -> "TrueHD"
+			"audio/mp4a-latm", "audio/aac" -> "AAC"
+			"audio/flac" -> "FLAC"
+			"audio/opus" -> "Opus"
+			"audio/mpeg" -> "MP3"
+			"audio/vorbis" -> "Vorbis"
+			null -> null
+			else -> format.sampleMimeType.substringAfter('/').uppercase(Locale.ROOT)
+		}
+		codec?.let(parts::add)
+
+		val channels = when (format.channelCount) {
+			1 -> "Mono"
+			2 -> "Stereo"
+			6 -> "5.1"
+			7 -> "6.1"
+			8 -> "7.1"
+			else -> null
+		}
+		channels?.let(parts::add)
+
+		return parts.takeIf { it.isNotEmpty() }?.joinToString(" · ") ?: "Track ${index + 1}"
+	}
+
 	/**
 	 * Applies the subtitle selection to the player.
-	 *
-	 * ExoPlayer does not select a text track on its own: a track is only rendered when it
+	 *	 * ExoPlayer does not select a text track on its own: a track is only rendered when it
 	 * is selected, and the default selection prefers no subtitles. A film that carries a
 	 * subtitle is played with its subtitles here, unless the user turned them off.
 	 */

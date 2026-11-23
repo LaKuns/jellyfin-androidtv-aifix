@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -31,6 +32,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.jellyfin.androidtv.R
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -43,9 +45,13 @@ import org.jellyfin.androidtv.ui.base.LocalTextStyle
 import org.jellyfin.androidtv.ui.base.Text
 import org.jellyfin.androidtv.ui.base.button.IconButton
 import org.jellyfin.androidtv.ui.base.popover.Popover
+import org.jellyfin.androidtv.ui.base.popover.PopoverMenu
+import org.jellyfin.androidtv.ui.base.popover.PopoverMenuCheckboxItem
 import org.jellyfin.androidtv.ui.composable.rememberPlayerPositionInfo
 import org.jellyfin.androidtv.ui.player.base.PlayerSeekbar
 import org.jellyfin.playback.core.PlaybackManager
+import org.jellyfin.playback.core.backend.AudioTrack
+import org.jellyfin.playback.core.backend.AudioTrackBackend
 import org.jellyfin.playback.core.backend.SubtitleTrackBackend
 import org.jellyfin.playback.core.model.PlayState
 import org.jellyfin.playback.core.queue.queue
@@ -80,6 +86,7 @@ fun VideoPlayerControls(
 			Spacer(Modifier.weight(1f))
 
 			PlaybackInfoButton(onClick = onPlaybackInfoClick)
+			AudioTrackButton(playbackManager)
 			SubtitleButton(playbackManager)
 			if (playState == PlayState.PAUSED) SelectEpisodeButton(playbackManager)
 
@@ -324,6 +331,68 @@ private fun SubtitleButton(playbackManager: PlaybackManager) {
 			contentDescription = stringResource(R.string.lbl_subtitle_track),
 			tint = LocalTextStyle.current.color.copy(alpha = if (enabled) 1f else 0.4f),
 		)
+	}
+}
+
+/**
+ * Lets the user pick the audio track of the item that is playing.
+ *
+ * The list comes from the backend, so it only offers tracks the player can actually play.
+ * The button is hidden while the item has fewer than two tracks, there is nothing to pick
+ * in that case.
+ */
+@Composable
+private fun AudioTrackButton(playbackManager: PlaybackManager) {
+	val backend = playbackManager.backend as? AudioTrackBackend ?: return
+	var tracks by remember { mutableStateOf<List<AudioTrack>>(backend.getAudioTracks()) }
+	var expanded by remember { mutableStateOf(false) }
+
+	// The tracks are only known after the player prepared the item, and they change when the
+	// queue moves on, so the list is refreshed while the controls are on screen.
+	LaunchedEffect(backend) {
+		while (true) {
+			val current = backend.getAudioTracks()
+			if (current != tracks) tracks = current
+			delay(1_000)
+		}
+	}
+
+	if (tracks.size < 2) return
+
+	Box {
+		IconButton(
+			onClick = {
+				tracks = backend.getAudioTracks()
+				expanded = true
+			},
+		) {
+			Icon(
+				imageVector = ImageVector.vectorResource(R.drawable.ic_audiotrack),
+				contentDescription = stringResource(R.string.lbl_audio_track),
+			)
+		}
+
+		Popover(
+			expanded = expanded,
+			onDismissRequest = { expanded = false },
+			alignment = Alignment.TopCenter,
+			offset = DpOffset(0.dp, (-5).dp),
+		) {
+			PopoverMenu {
+				tracks.forEach { track ->
+					PopoverMenuCheckboxItem(
+						selected = track.isSelected,
+						onClick = {
+							backend.setAudioTrack(track.id)
+							tracks = backend.getAudioTracks()
+							expanded = false
+						},
+					) {
+						Text(track.label)
+					}
+				}
+			}
+		}
 	}
 }
 
