@@ -37,6 +37,13 @@ public final class PlaybackQualityMonitor {
 	/** How often the collected numbers are written to the log. */
 	private static final long REPORT_INTERVAL_MS = 2_000L;
 
+	/**
+	 * The first frames of a stream are handed to the renderer before the audio clock is stable, which
+	 * produces one large offset that never repeats. The offset is therefore only collected after this
+	 * startup window, so that the numbers describe the steady state that the viewer sees.
+	 */
+	private static final long STARTUP_SETTLE_MS = 4_000L;
+
 	private final ExoPlayer player;
 	private final boolean enabled;
 	private final Handler handler = new Handler(Looper.getMainLooper());
@@ -57,6 +64,7 @@ public final class PlaybackQualityMonitor {
 	// written by the frame callback of the renderer thread, read by the report on the main thread
 	private volatile long lastPresentationTimeUs = -1;
 	private volatile long lastFrameWallClockMs = -1;
+	private volatile long firstFrameWallClockMs = -1;
 
 	private final Runnable report = new Runnable() {
 		@Override
@@ -89,6 +97,7 @@ public final class PlaybackQualityMonitor {
 				frames++;
 				lastPresentationTimeUs = presentationTimeUs;
 				lastFrameWallClockMs = SystemClock.elapsedRealtime();
+				if (firstFrameWallClockMs < 0) firstFrameWallClockMs = lastFrameWallClockMs;
 			}
 		};
 		player.setVideoFrameMetadataListener(videoFrameMetadataListener);
@@ -105,7 +114,10 @@ public final class PlaybackQualityMonitor {
 
 		long presentationTimeUs = lastPresentationTimeUs;
 		long frameWallClockMs = lastFrameWallClockMs;
-		if (presentationTimeUs >= 0 && frameWallClockMs >= 0 && player.getPlaybackState() == androidx.media3.common.Player.STATE_READY) {
+		if (presentationTimeUs >= 0 && frameWallClockMs >= 0
+				&& firstFrameWallClockMs >= 0
+				&& SystemClock.elapsedRealtime() - firstFrameWallClockMs >= STARTUP_SETTLE_MS
+				&& player.getPlaybackState() == androidx.media3.common.Player.STATE_READY) {
 			long nowMs = SystemClock.elapsedRealtime();
 			long positionNowMs = player.getCurrentPosition();
 			long audioClockAtFrameMs = positionNowMs - (nowMs - frameWallClockMs);
@@ -140,6 +152,7 @@ public final class PlaybackQualityMonitor {
 		minOffsetUs = Long.MAX_VALUE;
 		lastPresentationTimeUs = -1;
 		lastFrameWallClockMs = -1;
+		firstFrameWallClockMs = -1;
 	}
 
 	public void release() {
