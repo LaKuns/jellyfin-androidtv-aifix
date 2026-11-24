@@ -5,6 +5,9 @@ rootProject.name = "jellyfin-androidtv"
 // Application
 include(":app")
 
+// Baseline profile generator (P2: startup and first screen performance)
+include(":baselineprofile")
+
 // Modules
 include(":design")
 include(":playback:core")
