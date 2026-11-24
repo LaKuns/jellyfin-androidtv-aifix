@@ -2,22 +2,26 @@ package org.jellyfin.androidtv.baselineprofile
 
 import androidx.benchmark.macro.junit4.BaselineProfileRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.filters.LargeTest
+import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
+import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
+private const val PACKAGE_NAME = "org.jellyfin.androidtv"
+private const val WAIT_TIMEOUT_MS = 15_000L
+
+private fun device(): UiDevice = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
+
 /**
- * Generates the baseline profile for the start-up and first-screen critical paths.
- *
- * The journeys are deliberately small: the profile is only useful when it covers what the
- * application really executes during start-up, on the home screen and when a playback is
- * started, so this test drives exactly those paths and nothing else.
- *
- * Run with `./gradlew :baselineprofile:generateBaselineProfile` while a device is attached.
+ * Generates the baseline profile of the start-up paths: the home screen first, then the
+ * playback start of the first card (which is what the P2 work targets).
  */
 @RunWith(AndroidJUnit4::class)
+@LargeTest
 class BaselineProfileGenerator {
 	@get:Rule
 	val baselineProfileRule = BaselineProfileRule()
@@ -27,30 +31,40 @@ class BaselineProfileGenerator {
 		pressHome()
 		startActivityAndWait()
 
-		// The home screen loads its rows and images from the server, let it settle.
-		device.wait(Until.hasObject(By.pkg(PACKAGE_NAME)), WAIT_TIMEOUT_MS)
-		device.waitForIdle()
+		val ui = device()
+		ui.wait(Until.hasObject(By.pkg(PACKAGE_NAME)), WAIT_TIMEOUT_MS)
+		ui.waitForIdle()
+
+		// Let the home rows settle and their artwork load.
 		Thread.sleep(4_000)
 
-		// Open the focused item (the home screen focuses the first card on its own).
-		device.pressDPadCenter()
-		device.waitForIdle()
+		// User picker (first start only) then the first card, then the playback start.
+		ui.pressDPadCenter()
 		Thread.sleep(3_000)
-
-		// Start the playback from the detail page, then let it run for the profile.
-		device.pressDPadCenter()
-		device.waitForIdle()
+		ui.pressDPadCenter()
 		Thread.sleep(8_000)
 
-		// Leave the player and the detail page again so the journey is repeatable.
-		device.pressBack()
+		ui.pressBack()
 		Thread.sleep(1_000)
-		device.pressBack()
+		ui.pressBack()
 		Thread.sleep(1_000)
 	}
 
-	private companion object {
-		const val PACKAGE_NAME = "org.jellyfin.androidtv"
-		const val WAIT_TIMEOUT_MS = 15_000L
+	/**
+	 * Startup profile rules: only the code that runs before the first frame. Generating these
+	 * separately keeps the ART start-up compilation small and focused.
+	 */
+	@Test
+	fun startupProfile() = baselineProfileRule.collect(
+		packageName = PACKAGE_NAME,
+		includeInStartupProfile = true,
+	) {
+		pressHome()
+		startActivityAndWait()
+
+		val ui = device()
+		ui.wait(Until.hasObject(By.pkg(PACKAGE_NAME)), WAIT_TIMEOUT_MS)
+		ui.waitForIdle()
+		Thread.sleep(4_000)
 	}
 }
