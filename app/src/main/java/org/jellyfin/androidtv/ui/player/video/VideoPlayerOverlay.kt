@@ -2,7 +2,6 @@ package org.jellyfin.androidtv.ui.player.video
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -10,9 +9,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import org.jellyfin.androidtv.ui.composable.rememberQueueEntry
 import org.jellyfin.androidtv.ui.player.base.PlayerOverlayLayout
 import org.jellyfin.androidtv.ui.player.base.rememberPlayerOverlayVisibility
@@ -36,7 +33,7 @@ fun VideoPlayerOverlay(
 	LaunchedEffect(playState) {
 		if (playState == PlayState.PAUSED || playState == PlayState.PLAYING) visibilityState.show()
 	}
-	var showPlaybackInfo by remember { mutableStateOf(false) }
+	var showSettings by remember { mutableStateOf(false) }
 
 	val entry by rememberQueueEntry(playbackManager)
 	val item = entry?.run { baseItemFlow.collectAsState(baseItem) }?.value
@@ -54,20 +51,17 @@ fun VideoPlayerOverlay(
 			controls = {
 				VideoPlayerControls(
 					playbackManager = playbackManager,
-					onPlaybackInfoClick = { showPlaybackInfo = !showPlaybackInfo },
+					onMoreOptionsClick = { showSettings = true },
 				)
 			},
 		)
 
-		// Playback info overlay - positioned below header area, always visible when enabled
-		if (showPlaybackInfo) {
-			PlaybackInfoOverlay(
-				playbackManager = playbackManager,
-				modifier = Modifier
-					.align(Alignment.TopStart)
-					.padding(start = 48.dp, top = 100.dp)
-			)
-		}
+		// Right-side sheet with the playback info and the rarely changed settings.
+		PlayerSettingsPanel(
+			playbackManager = playbackManager,
+			visible = showSettings,
+			onDismiss = { showSettings = false },
+		)
 
 		MediaToasts(mediaToastRegistry)
 	}

@@ -26,6 +26,21 @@ import org.jellyfin.playback.core.mediastream.mediaStreamFlow
 fun PlaybackInfoOverlay(
 	playbackManager: PlaybackManager,
 	modifier: Modifier = Modifier,
+) = PlaybackInfoSection(
+	playbackManager = playbackManager,
+	modifier = modifier
+		.background(Color.Black.copy(alpha = 0.8f))
+		.padding(16.dp),
+)
+
+/**
+ * The playback info rows without any background, so it can also be embedded in the
+ * settings panel of the player.
+ */
+@Composable
+fun PlaybackInfoSection(
+	playbackManager: PlaybackManager,
+	modifier: Modifier = Modifier,
 ) {
 	val entry by rememberQueueEntry(playbackManager)
 	val mediaStream by entry?.mediaStreamFlow?.collectAsState(null) ?: return
@@ -36,9 +51,7 @@ fun PlaybackInfoOverlay(
 
 	Column(
 		verticalArrangement = Arrangement.spacedBy(4.dp),
-		modifier = modifier
-			.background(Color.Black.copy(alpha = 0.8f))
-			.padding(16.dp)
+		modifier = modifier,
 	) {
 		// Play method
 		val methodStr = when (stream.conversionMethod) {

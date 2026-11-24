@@ -732,4 +732,11 @@
     <string name="truehd">TrueHD</string>
     <string name="eac3_atmos">DD+ Atmos</string>
     <string name="truehd_atmos">TrueHD Atmos</string>
-</resources>
+    <string name="lbl_player_settings">Player settings</string>
+    <string name="lbl_player_settings_hint">Press BACK to close · more app settings live in Settings → Playback</string>
+    <string name="lbl_subtitles_on">Subtitles on</string>
+    <string name="lbl_subtitles_off">Subtitles off</string>
+    <string name="repeat_mode_none">Repeat off</string>
+    <string name="repeat_mode_once">Repeat this item once</string>
+    <string name="repeat_mode_infinite">Repeat this item</string>
+    <string name="speed_multiplier">%1$s× speed</string></resources>

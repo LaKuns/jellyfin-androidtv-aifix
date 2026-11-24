@@ -718,4 +718,11 @@
     <string name="tv_provider_enabled">集成到 Android TV 首页</string>
     <string name="tv_provider_enabled_description">在Android TV主屏幕上展示Jellyfin频道和推荐内容</string>
     <string name="lbl_3d">3D</string>
-</resources>
+    <string name="lbl_player_settings">播放设置</string>
+    <string name="lbl_player_settings_hint">按返回键关闭 · 更多应用设置见 设置 → 播放</string>
+    <string name="lbl_subtitles_on">显示字幕</string>
+    <string name="lbl_subtitles_off">关闭字幕</string>
+    <string name="repeat_mode_none">不循环</string>
+    <string name="repeat_mode_once">单次重复</string>
+    <string name="repeat_mode_infinite">重复播放</string>
+    <string name="speed_multiplier">%1$s× 速度</string></resources>

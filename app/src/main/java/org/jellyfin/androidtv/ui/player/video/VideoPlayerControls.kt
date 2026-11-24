@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -17,7 +16,6 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -33,7 +31,6 @@ import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import org.jellyfin.androidtv.R
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import org.jellyfin.androidtv.preference.UserPreferences
@@ -66,7 +63,7 @@ import kotlin.time.DurationUnit
 @Composable
 fun VideoPlayerControls(
 	playbackManager: PlaybackManager = koinInject(),
-	onPlaybackInfoClick: () -> Unit = {},
+	onMoreOptionsClick: () -> Unit = {},
 ) {
 	val playState by playbackManager.state.playState.collectAsState()
 
@@ -85,15 +82,11 @@ fun VideoPlayerControls(
 
 			Spacer(Modifier.weight(1f))
 
-			PlaybackInfoButton(onClick = onPlaybackInfoClick)
 			AudioTrackButton(playbackManager)
 			SubtitleButton(playbackManager)
 			if (playState == PlayState.PAUSED) SelectEpisodeButton(playbackManager)
 
-			MoreOptionsButton {
-				PreviousEntryButton(playbackManager)
-				NextEntryButton(playbackManager)
-			}
+			MoreSettingsButton(onClick = onMoreOptionsClick)
 		}
 
 		PlayerSeekbar(
@@ -209,47 +202,15 @@ private fun FastForwardButton(
 }
 
 @Composable
-private fun PreviousEntryButton(
-	playbackManager: PlaybackManager,
+private fun MoreSettingsButton(
+	onClick: () -> Unit,
+) = IconButton(
+	onClick = onClick,
 ) {
-	val entryIndex by playbackManager.queue.entryIndex.collectAsState()
-	val coroutineScope = rememberCoroutineScope()
-
-	IconButton(
-		enabled = entryIndex > 0,
-		onClick = {
-			coroutineScope.launch {
-				playbackManager.queue.previous()
-			}
-		},
-	) {
-		Icon(
-			imageVector = ImageVector.vectorResource(R.drawable.ic_previous),
-			contentDescription = stringResource(R.string.lbl_prev_item),
-		)
-	}
-}
-
-@Composable
-private fun NextEntryButton(
-	playbackManager: PlaybackManager,
-) {
-	val entryIndex by playbackManager.queue.entryIndex.collectAsState()
-	val coroutineScope = rememberCoroutineScope()
-
-	IconButton(
-		enabled = entryIndex < playbackManager.queue.estimatedSize - 1,
-		onClick = {
-			coroutineScope.launch {
-				playbackManager.queue.next()
-			}
-		},
-	) {
-		Icon(
-			imageVector = ImageVector.vectorResource(R.drawable.ic_next),
-			contentDescription = stringResource(R.string.lbl_next_item),
-		)
-	}
+	Icon(
+		imageVector = ImageVector.vectorResource(R.drawable.ic_more),
+		contentDescription = stringResource(R.string.lbl_other_options),
+	)
 }
 
 private fun Duration.formatted(includeHours: Boolean): String {
@@ -283,36 +244,6 @@ private fun PositionText(
 		text = text,
 		style = LocalTextStyle.current.copy(color = Color.White)
 	)
-}
-
-@Composable
-private fun MoreOptionsButton(
-	content: @Composable () -> Unit,
-) = Box {
-	var expanded by remember { mutableStateOf(false) }
-	IconButton(
-		onClick = { expanded = true },
-	) {
-		Icon(
-			imageVector = ImageVector.vectorResource(R.drawable.ic_more),
-			contentDescription = stringResource(R.string.lbl_other_options),
-		)
-	}
-
-	Popover(
-		expanded = expanded,
-		onDismissRequest = { expanded = false },
-		alignment = Alignment.TopCenter,
-		offset = DpOffset(0.dp, (-5).dp)
-	) {
-		Row(
-			horizontalArrangement = Arrangement.spacedBy(12.dp),
-			modifier = Modifier
-				.padding(4.dp)
-		) {
-			content()
-		}
-	}
 }
 
 @Composable
@@ -394,16 +325,4 @@ private fun AudioTrackButton(playbackManager: PlaybackManager) {
 			}
 		}
 	}
-}
-
-@Composable
-fun PlaybackInfoButton(
-	onClick: () -> Unit,
-) = IconButton(
-	onClick = onClick,
-) {
-	Icon(
-		imageVector = ImageVector.vectorResource(R.drawable.ic_info),
-		contentDescription = stringResource(R.string.playback_info),
-	)
 }
