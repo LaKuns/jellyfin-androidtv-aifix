@@ -102,7 +102,6 @@ fun PlayerSettingsPanel(
 	val focusRequester = remember { FocusRequester() }
 
 	LaunchedEffect(visible) {
-		timber.log.Timber.i("Player settings panel: content visible=%s", visible)
 		if (visible) {
 			// The enter animation attaches the rows a bit later, so ask a few times until one
 			// of them takes the focus.
@@ -248,14 +247,12 @@ private fun AudioTracksSection(
 			// Only touch the state when the list really changed, otherwise the rows are
 			// recomposed every second and a remote click can be lost in between.
 			if (latest != tracks) {
-				timber.log.Timber.i("Player settings panel: audio tracks=%d", latest.size)
 				tracks = latest
 			}
 			delay(1_000)
 		}
 	}
 
-	timber.log.Timber.i("Player settings panel: audio tracks=%d (composed)", tracks.size)
 	if (tracks.size < 2) return false
 
 	SectionTitle(stringResource(R.string.lbl_audio_track))
@@ -264,7 +261,6 @@ private fun AudioTracksSection(
 			selected = track.isSelected,
 			modifier = if (index == 0) firstRowModifier else Modifier,
 			onClick = {
-				timber.log.Timber.i("Player settings panel: audio row clicked=%s", track.id)
 				backend.setAudioTrack(track.id)
 				tracks = backend.getAudioTracks()
 			},
