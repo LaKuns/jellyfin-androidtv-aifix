@@ -54,7 +54,6 @@ import org.jellyfin.playback.core.support.PlaybackBufferSizing
 import org.jellyfin.playback.core.timedevent.TimedEvent
 import org.jellyfin.playback.core.ui.PlayerSubtitleView
 import org.jellyfin.playback.core.ui.PlayerSurfaceView
-import org.jellyfin.playback.media3.exoplayer.support.PassthroughRenderersFactory
 import org.jellyfin.playback.media3.exoplayer.support.getPlaySupportReport
 import org.jellyfin.playback.media3.exoplayer.support.toFormats
 import timber.log.Timber
@@ -147,7 +146,7 @@ class ExoPlayerBackend(
 			}
 		} else DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
 
-		val renderersFactory = PassthroughRenderersFactory(context).apply {
+		val renderersFactory = DefaultRenderersFactory(context).apply {
 			// Falling back to a software decoder hides the real problem: the device advertises
 			// hardware support for a format it can only decode in software and the playback
 			// silently stalls instead of failing. Devices that are known to be slow should get
