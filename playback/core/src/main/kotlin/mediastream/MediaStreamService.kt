@@ -118,7 +118,7 @@ internal class MediaStreamService(
 	private suspend fun recoverFromError() {
 		val entry = manager.queue.entry.value ?: return
 		val backend = manager.backend ?: return
-		val position = backend.getPositionInfo().position
+		val position = backend.getPositionInfo().active
 
 		if (!entry.ensureDegradation()) {
 			Timber.e("Playback failed for $entry at $position, no further degradation possible")
