@@ -118,7 +118,12 @@ class ExoPlayerBackend(
 	 * subtitle view the player attaches, the same way the old player draws them.
 	 */
 	private val assHandler by lazy {
-		AssHandler(AssRenderType.CUES, AssHandlerConfig(2_000, 8, 1920 * 1080))
+		// The third argument (max render pixels) must stay 0: the library normalises a cue
+		// position by dividing the render-frame pixel position by the video size, so any
+		// limit below the video resolution shrinks the subtitle and shifts it towards the
+		// upper left corner. On a 3840x1608 film a 1920x1080 limit moved the subtitle to
+		// roughly half of its correct position (see VideoManager.java for the same rule).
+		AssHandler(AssRenderType.CUES, AssHandlerConfig(2_000, 8, 0))
 	}
 
 	private val exoPlayer by lazy {

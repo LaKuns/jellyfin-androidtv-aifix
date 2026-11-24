@@ -142,9 +142,10 @@ public class VideoManager {
         // No limit is put on the pixels of that picture: the parser divides the position of a
         // cue by the size of the render frame, while the frame that the handler renders in is
         // the video size, so a limit smaller than the video shrinks the subtitles and moves
-        // them towards the upper left corner.
+        // them towards the upper left corner. The third argument must therefore stay 0; only
+        // the glyph and bitmap cache sizes (first two arguments) are capped.
         AssHandler assHandler = assDirectPlay
-                ? new AssHandler(AssRenderType.CUES, new AssHandlerConfig(2_000, 8, 1920 * 1080))
+                ? new AssHandler(AssRenderType.CUES, new AssHandlerConfig(2_000, 8, 0))
                 : null;
 
         mExoPlayer = configureExoplayerBuilder(activity, assHandler).build();
