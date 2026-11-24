@@ -72,7 +72,14 @@ object HevcMain10Probe {
 	@Synchronized
 	fun getLevel(): Int {
 		if (cachedLevel == UNSET) {
-			val level = probeWithTimeout()
+			// The probe is an optimisation, so a failure of the codec service must not escape:
+			// this runs while the device profile is built.
+			val level = try {
+				probeWithTimeout()
+			} catch (throwable: Throwable) {
+				Timber.w(throwable, "Main 10 probe failed")
+				UNSUPPORTED
+			}
 			attempts++
 
 			// A decoder can be busy while another app is using the display, so a negative
@@ -194,7 +201,7 @@ object HevcMain10Probe {
 	 *
 	 * A software decoder configures any profile, so it proves nothing about the hardware.
 	 */
-	private fun hardwareDecoderNames(): List<String> =
+	private fun hardwareDecoderNames(): List<String> = try {
 		MediaCodecList(MediaCodecList.ALL_CODECS).codecInfos
 			.asSequence()
 			.filter { !it.isEncoder }
@@ -202,6 +209,10 @@ object HevcMain10Probe {
 			.filter { info -> !isSoftwareCodec(info) }
 			.map { it.name }
 			.toList()
+	} catch (throwable: Throwable) {
+		Timber.w(throwable, "Main 10 probe: cannot read the codec list")
+		emptyList()
+	}
 
 	private fun isSoftwareCodec(info: android.media.MediaCodecInfo): Boolean =
 		if (AndroidVersion.isAtLeastQ) {

@@ -60,7 +60,12 @@ class BackgroundService(
 		// The device profile asks a hardware decoder whether it decodes Main 10, and that question
 		// creates a decoder. Ask it once at startup so that starting a playback never waits for the
 		// codec service.
-		scope.launch(Dispatchers.IO) { org.jellyfin.androidtv.util.profile.codec.HevcMain10Probe.getLevel() }
+		scope.launch(Dispatchers.IO) {
+			// A device whose codec service is broken must not take the app down at startup: the
+			// probe is an optimisation and an exception here is not a reason to crash.
+			runCatching { org.jellyfin.androidtv.util.profile.codec.HevcMain10Probe.getLevel() }
+				.onFailure { error -> timber.log.Timber.w(error, "Main 10 probe failed at startup") }
+		}
 	}
 	private val lowPerformanceDevice = PerformanceProfile.isLowPerformanceDevice(context)
 	private val maxBackgroundCount = if (lowPerformanceDevice) MAX_LOW_PERFORMANCE_BACKGROUND_COUNT else MAX_BACKGROUND_COUNT
