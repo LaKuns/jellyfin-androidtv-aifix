@@ -103,6 +103,7 @@ fun PlayerSettingsPanel(
 	val focusRequester = remember { FocusRequester() }
 
 	LaunchedEffect(visible) {
+		timber.log.Timber.i("Player settings panel: content visible=%s", visible)
 		if (visible) {
 			// Wait for the enter animation to attach the nodes before requesting the focus.
 			delay(100)

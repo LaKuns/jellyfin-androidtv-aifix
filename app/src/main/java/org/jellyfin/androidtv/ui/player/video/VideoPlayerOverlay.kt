@@ -34,6 +34,9 @@ fun VideoPlayerOverlay(
 		if (playState == PlayState.PAUSED || playState == PlayState.PLAYING) visibilityState.show()
 	}
 	var showSettings by remember { mutableStateOf(false) }
+	LaunchedEffect(showSettings) {
+		timber.log.Timber.i("Player settings panel: visible=%s", showSettings)
+	}
 
 	val entry by rememberQueueEntry(playbackManager)
 	val item = entry?.run { baseItemFlow.collectAsState(baseItem) }?.value
@@ -51,7 +54,10 @@ fun VideoPlayerOverlay(
 			controls = {
 				VideoPlayerControls(
 					playbackManager = playbackManager,
-					onMoreOptionsClick = { showSettings = true },
+					onMoreOptionsClick = {
+						timber.log.Timber.i("Player settings panel: open requested")
+						showSettings = true
+					},
 				)
 			},
 		)
