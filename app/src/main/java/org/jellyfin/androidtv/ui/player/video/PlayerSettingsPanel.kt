@@ -60,6 +60,7 @@ import org.jellyfin.playback.core.backend.AudioTrack
 import org.jellyfin.playback.core.backend.AudioTrackBackend
 import org.jellyfin.playback.core.backend.SubtitleTrackBackend
 import org.jellyfin.playback.core.model.RepeatMode
+import org.jellyfin.playback.core.queue.queue
 import org.jellyfin.playback.jellyfin.queue.baseItem
 import org.jellyfin.sdk.model.api.BaseItemKind
 import kotlin.math.abs
