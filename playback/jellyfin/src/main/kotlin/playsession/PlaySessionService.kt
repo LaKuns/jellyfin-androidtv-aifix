@@ -1,8 +1,10 @@
 package org.jellyfin.playback.jellyfin.playsession
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.jellyfin.playback.core.mediastream.MediaConversionMethod
@@ -23,6 +25,7 @@ import org.jellyfin.sdk.model.api.QueueItem
 import org.jellyfin.sdk.model.extensions.inWholeTicks
 import timber.log.Timber
 import kotlin.math.roundToInt
+import kotlin.time.Duration.Companion.seconds
 import org.jellyfin.sdk.model.api.RepeatMode as SdkRepeatMode
 
 class PlaySessionService(
@@ -37,6 +40,16 @@ class PlaySessionService(
 				PlayState.ERROR -> sendStreamStop()
 			}
 		}.launchIn(coroutineScope)
+
+		// Report the position periodically while playing. Without this the server only sees the
+		// start and the pause/stop events, so the "continue watching" position and the now playing
+		// state on the other clients stay stale for the whole session.
+		coroutineScope.launch {
+			while (isActive) {
+				delay(PROGRESS_REPORT_INTERVAL)
+				if (state.playState.value == PlayState.PLAYING) sendStreamUpdate()
+			}
+		}
 	}
 
 	private val MediaConversionMethod.playMethod
@@ -143,5 +156,9 @@ class PlaySessionService(
 				)
 			)
 		}.onFailure { error -> Timber.w("Failed to send playback stop event", error) }
+	}
+
+	private companion object {
+		private val PROGRESS_REPORT_INTERVAL = 10.seconds
 	}
 }
