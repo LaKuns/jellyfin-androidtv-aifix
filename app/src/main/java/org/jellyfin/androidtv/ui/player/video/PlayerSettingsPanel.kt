@@ -247,11 +247,15 @@ private fun AudioTracksSection(
 			val latest = backend.getAudioTracks()
 			// Only touch the state when the list really changed, otherwise the rows are
 			// recomposed every second and a remote click can be lost in between.
-			if (latest != tracks) tracks = latest
+			if (latest != tracks) {
+				timber.log.Timber.i("Player settings panel: audio tracks=%d", latest.size)
+				tracks = latest
+			}
 			delay(1_000)
 		}
 	}
 
+	timber.log.Timber.i("Player settings panel: audio tracks=%d (composed)", tracks.size)
 	if (tracks.size < 2) return false
 
 	SectionTitle(stringResource(R.string.lbl_audio_track))
