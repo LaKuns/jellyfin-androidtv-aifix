@@ -36,6 +36,9 @@ fun VideoPlayerOverlay(
 	var showSettings by remember { mutableStateOf(false) }
 	LaunchedEffect(showSettings) {
 		timber.log.Timber.i("Player settings panel: visible=%s", showSettings)
+		// While the settings sheet is open it owns the focus: hide the control bar, otherwise
+		// its buttons keep the focus and steal the key presses of the sheet.
+		if (showSettings) visibilityState.hide() else visibilityState.show()
 	}
 
 	val entry by rememberQueueEntry(playbackManager)

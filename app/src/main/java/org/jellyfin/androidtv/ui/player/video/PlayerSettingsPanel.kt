@@ -104,9 +104,12 @@ fun PlayerSettingsPanel(
 	LaunchedEffect(visible) {
 		timber.log.Timber.i("Player settings panel: content visible=%s", visible)
 		if (visible) {
-			// Wait for the enter animation to attach the nodes before requesting the focus.
-			delay(120)
-			runCatching { focusRequester.requestFocus() }
+			// The enter animation attaches the rows a bit later, so ask a few times until one
+			// of them takes the focus.
+			repeat(10) { attempt ->
+				delay(if (attempt == 0) 120 else 200)
+				runCatching { focusRequester.requestFocus() }
+			}
 		}
 	}
 
