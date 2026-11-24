@@ -728,4 +728,8 @@
     <string name="speed_multiplier">%1$s× 速度</string>    <string name="playback_retry_remux">播放异常，正在以兼容模式重试…</string>
     <string name="playback_retry_transcode">播放异常，正在转码重试…</string>
     <string name="playback_failed">无法播放该视频</string>
+    <string name="video_player_new">新版播放器（默认）</string>
+    <string name="video_player_new_description">支持直接播放、音轨与字幕选择，播放失败时自动降级重试。</string>
+    <string name="video_player_legacy">旧版播放器（回退）</string>
+    <string name="video_player_legacy_description">仅在新播放器出现问题时使用，并请反馈该问题。</string>
 </resources>

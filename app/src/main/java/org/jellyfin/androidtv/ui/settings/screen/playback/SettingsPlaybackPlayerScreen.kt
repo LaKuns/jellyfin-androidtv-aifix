@@ -13,7 +13,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import coil3.compose.rememberAsyncImagePainter
-import org.jellyfin.androidtv.BuildConfig
 import org.jellyfin.androidtv.R
 import org.jellyfin.androidtv.data.repository.ExternalAppRepository
 import org.jellyfin.androidtv.preference.UserPreferences
@@ -42,7 +41,6 @@ fun SettingsPlaybackPlayerScreen() {
 	val currentExternalPlayer = remember(context) { externalAppRepository.getCurrentExternalPlayerApp(context) }
 
 	var playbackRewriteVideoEnabled by rememberPreference(userPreferences, UserPreferences.playbackRewriteVideoEnabled)
-	val showNewPlayer = playbackRewriteVideoEnabled || BuildConfig.DEVELOPMENT
 
 	SettingsColumn {
 		item {
@@ -63,20 +61,20 @@ fun SettingsPlaybackPlayerScreen() {
 							.clip(LocalShapes.current.small)
 					)
 				},
-				headingContent = { Text(stringResource(R.string.app_name)) },
-				trailingContent = { RadioButton(checked = currentExternalPlayer == null && !playbackRewriteVideoEnabled) },
-				captionContent = { Text(stringResource(R.string.video_player_internal)) },
+				headingContent = { Text(stringResource(R.string.video_player_new)) },
+				trailingContent = { RadioButton(checked = currentExternalPlayer == null && playbackRewriteVideoEnabled) },
+				captionContent = { Text(stringResource(R.string.video_player_new_description)) },
 				onClick = {
-					playbackRewriteVideoEnabled = false
+					playbackRewriteVideoEnabled = true
 					externalAppRepository.setExternalPlayerapp(null)
 					router.back()
 				},
 				modifier = Modifier
-					.focusKey("player_internal", initialFocus = currentExternalPlayer == null && !playbackRewriteVideoEnabled)
+					.focusKey("player_new", initialFocus = currentExternalPlayer == null && playbackRewriteVideoEnabled)
 			)
 		}
 
-		if (showNewPlayer) item {
+		item {
 			ListButton(
 				leadingContent = {
 					Image(
@@ -87,16 +85,16 @@ fun SettingsPlaybackPlayerScreen() {
 							.clip(LocalShapes.current.small)
 					)
 				},
-				headingContent = { Text("New video player") },
-				trailingContent = { RadioButton(checked = currentExternalPlayer == null && playbackRewriteVideoEnabled) },
-				captionContent = { Text(stringResource(R.string.enable_playback_module_description)) },
+				headingContent = { Text(stringResource(R.string.video_player_legacy)) },
+				trailingContent = { RadioButton(checked = currentExternalPlayer == null && !playbackRewriteVideoEnabled) },
+				captionContent = { Text(stringResource(R.string.video_player_legacy_description)) },
 				onClick = {
-					playbackRewriteVideoEnabled = true
+					playbackRewriteVideoEnabled = false
 					externalAppRepository.setExternalPlayerapp(null)
 					router.back()
 				},
 				modifier = Modifier
-					.focusKey("player_new", initialFocus = currentExternalPlayer == null && playbackRewriteVideoEnabled)
+					.focusKey("player_internal", initialFocus = currentExternalPlayer == null && !playbackRewriteVideoEnabled)
 			)
 		}
 

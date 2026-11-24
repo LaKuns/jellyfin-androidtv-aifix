@@ -242,9 +242,13 @@ class UserPreferences(context: Context) : SharedPreferenceStore(
 		var debuggingEnabled = booleanPreference("pref_enable_debug", false)
 
 		/**
-		 * Use playback rewrite module for video
+		 * Use playback rewrite module for video.
+		 *
+		 * The rewrite module (the new player) is the default: it owns the audio/subtitle track
+		 * selection, the playback settings sheet and the automatic degradation when a stream cannot
+		 * be played. Setting this to false is the escape hatch back to the legacy player.
 		 */
-		var playbackRewriteVideoEnabled = booleanPreference("playback_new", false)
+		var playbackRewriteVideoEnabled = booleanPreference("playback_new", true)
 
 		/**
 		 * When to show the clock.

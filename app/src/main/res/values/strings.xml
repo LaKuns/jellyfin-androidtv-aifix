@@ -742,4 +742,8 @@
     <string name="speed_multiplier">%1$s× speed</string>    <string name="playback_retry_remux">Playback problem, retrying in compatibility mode…</string>
     <string name="playback_retry_transcode">Playback problem, retrying with transcoding…</string>
     <string name="playback_failed">Unable to play this video</string>
+    <string name="video_player_new">New video player (default)</string>
+    <string name="video_player_new_description">Direct play, audio and subtitle track selection, automatic fallback when a stream cannot be played.</string>
+    <string name="video_player_legacy">Legacy video player (fallback)</string>
+    <string name="video_player_legacy_description">Use this only if the new player has a problem, then report it.</string>
 </resources>
