@@ -237,7 +237,10 @@ private fun AudioTracksSection(playbackManager: PlaybackManager) {
 
 	LaunchedEffect(backend) {
 		while (true) {
-			tracks = backend.getAudioTracks()
+			val latest = backend.getAudioTracks()
+			// Only touch the state when the list really changed, otherwise the rows are
+			// recomposed every second and a remote click can be lost in between.
+			if (latest != tracks) tracks = latest
 			delay(1_000)
 		}
 	}
@@ -249,6 +252,7 @@ private fun AudioTracksSection(playbackManager: PlaybackManager) {
 		PanelRow(
 			selected = track.isSelected,
 			onClick = {
+				timber.log.Timber.i("Player settings panel: audio row clicked=%s", track.id)
 				backend.setAudioTrack(track.id)
 				tracks = backend.getAudioTracks()
 			},
