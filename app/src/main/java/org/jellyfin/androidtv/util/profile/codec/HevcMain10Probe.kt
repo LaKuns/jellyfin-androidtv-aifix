@@ -8,6 +8,7 @@ import android.media.MediaFormat
 import android.view.Surface
 import org.jellyfin.androidtv.util.AndroidVersion
 import timber.log.Timber
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Probes whether a hardware decoder of the device decodes 10 bit HEVC (Main 10).
@@ -43,10 +44,18 @@ object HevcMain10Probe {
 		CodecProfileLevel.HEVCMainTierLevel4 to 120,
 	)
 
+	/** How long the profile build waits for the codec service before it gives up. */
+	private const val PROBE_TIMEOUT_MS = 1_000L
+
+	/** How often the probe may time out before the answer is cached as "not supported". */
+	private const val MAXIMUM_TIMED_OUT_ATTEMPTS = 2
+
 	@Volatile
 	private var cachedLevel: Int = UNSET
 
 	private var attempts: Int = 0
+
+	private var timedOutAttempts: Int = 0
 
 	/**
 	 * Whether a hardware decoder of the device decodes Main 10.
@@ -63,12 +72,12 @@ object HevcMain10Probe {
 	@Synchronized
 	fun getLevel(): Int {
 		if (cachedLevel == UNSET) {
-			val level = probe()
+			val level = probeWithTimeout()
 			attempts++
 
 			// A decoder can be busy while another app is using the display, so a negative
 			// answer is only cached after it was confirmed a second time.
-			if (level > UNSUPPORTED || attempts >= 2) {
+			if (level > UNSUPPORTED || attempts >= 2 || timedOutAttempts >= MAXIMUM_TIMED_OUT_ATTEMPTS) {
 				cachedLevel = level
 			}
 
@@ -78,7 +87,16 @@ object HevcMain10Probe {
 		return cachedLevel
 	}
 
-	private fun probe(): Int {
+	/**
+	 * Runs [probe] on a separate thread and waits for it with a limit.
+	 *
+	 * Creating a decoder talks to the codec service of the device. If that service is in a bad
+	 * state the call does not return at all: the probe then blocked the thread that builds the
+	 * device profile, and because that thread is the main thread of the app the playback never
+	 * started. A timed out probe reports "not supported" for this session instead of hanging,
+	 * and after a few timeouts the probe is not tried again until the app is restarted.
+	 */
+	private fun probeWithTimeout(): Int {
 		val names = hardwareDecoderNames()
 		if (names.isEmpty()) {
 			Timber.i("Main 10 probe: the device has no hardware HEVC decoder")
@@ -87,21 +105,53 @@ object HevcMain10Probe {
 
 		var texture: SurfaceTexture? = null
 		var surface: Surface? = null
+		val result = AtomicInteger(UNSUPPORTED)
 
 		try {
+			// The texture belongs to the thread that consumes its frames, so it is created
+			// here; only the calls into the codec service may block and are put on the worker.
 			texture = SurfaceTexture(0)
 			texture.setDefaultBufferSize(1920, 1080)
 			surface = Surface(texture)
+			val probeSurface = surface
 
-			for (name in names) {
-				val level = probeDecoder(name, surface)
-				if (level > UNSUPPORTED) return level
+			val worker = Thread(
+				{
+					try {
+						result.set(probe(names, probeSurface))
+					} catch (throwable: Throwable) {
+						Timber.w(throwable, "Main 10 probe failed")
+					}
+				},
+				"hevc-main10-probe",
+			)
+			worker.isDaemon = true
+			worker.start()
+			worker.join(PROBE_TIMEOUT_MS)
+
+			if (worker.isAlive) {
+				timedOutAttempts++
+				Timber.w(
+					"Main 10 probe: the codec service did not answer within %d ms, assuming that Main 10 is not supported",
+					PROBE_TIMEOUT_MS,
+				)
+				return UNSUPPORTED
 			}
 		} catch (exception: Exception) {
 			Timber.w(exception, "Main 10 probe failed")
+			return UNSUPPORTED
 		} finally {
 			surface?.release()
 			texture?.release()
+		}
+
+		return result.get()
+	}
+
+	private fun probe(names: List<String>, surface: Surface): Int {
+		for (name in names) {
+			val level = probeDecoder(name, surface)
+			if (level > UNSUPPORTED) return level
 		}
 
 		Timber.i("Main 10 probe: no hardware decoder accepts Main 10")

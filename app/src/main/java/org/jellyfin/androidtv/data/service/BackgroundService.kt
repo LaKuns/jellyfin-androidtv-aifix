@@ -55,6 +55,13 @@ class BackgroundService(
 
 	// Async
 	private val scope = MainScope()
+
+	init {
+		// The device profile asks a hardware decoder whether it decodes Main 10, and that question
+		// creates a decoder. Ask it once at startup so that starting a playback never waits for the
+		// codec service.
+		scope.launch(Dispatchers.IO) { org.jellyfin.androidtv.util.profile.codec.HevcMain10Probe.getLevel() }
+	}
 	private val lowPerformanceDevice = PerformanceProfile.isLowPerformanceDevice(context)
 	private val maxBackgroundCount = if (lowPerformanceDevice) MAX_LOW_PERFORMANCE_BACKGROUND_COUNT else MAX_BACKGROUND_COUNT
 	private val backgroundSize by lazy {
