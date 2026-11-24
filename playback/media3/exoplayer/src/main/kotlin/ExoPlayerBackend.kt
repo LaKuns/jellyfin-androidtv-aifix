@@ -459,9 +459,9 @@ class ExoPlayerBackend(
 	}
 
 	override fun getAudioTracks(): List<AudioTrack> {
-		val tracks = currentTracks ?: return emptyList()
+		val tracks = currentTracks ?: readCurrentTracks() ?: return emptyList()
 
-		return tracks.groups
+		val audioTracks = tracks.groups
 			.filter { group -> group.type == C.TRACK_TYPE_AUDIO }
 			.flatMap { group ->
 				(0 until group.length)
@@ -475,10 +475,17 @@ class ExoPlayerBackend(
 						)
 					}
 			}
+		Timber.i(
+			"Audio tracks: %d of %d groups (%s)",
+			audioTracks.size,
+			tracks.groups.size,
+			tracks.groups.joinToString { "%d/%d".format(it.type, it.length) },
+		)
+		return audioTracks
 	}
 
 	override fun setAudioTrack(id: String) {
-		val tracks = currentTracks ?: return
+		val tracks = currentTracks ?: readCurrentTracks() ?: return
 		val (group, index) = findAudioTrack(tracks, id) ?: run {
 			Timber.w("Audio track %s does not exist in the current item", id)
 			return
@@ -487,6 +494,19 @@ class ExoPlayerBackend(
 		selectedAudioTrackId = id
 		applyAudioSelection(tracks)
 		Timber.i("Audio track selected: %s", audioTrackLabel(group.getFormat(index), index))
+	}
+
+	/**
+	 * Reads the tracks straight from the player.
+	 *
+	 * The tracks normally arrive through [PlayerListener.onTracksChanged], but that callback
+	 * only fires on a change: an item that was already prepared before the player was built
+	 * (a resumed session) never reports its tracks, so they have to be read on demand.
+	 */
+	private fun readCurrentTracks(): Tracks? {
+		val tracks = runCatching { exoPlayer.currentTracks }.getOrNull() ?: return null
+		currentTracks = tracks
+		return tracks
 	}
 
 	/**
