@@ -1,6 +1,7 @@
 plugins {
 	alias(libs.plugins.aboutlibraries)
 	alias(libs.plugins.android.application)
+	alias(libs.plugins.androidx.baselineprofile)
 	alias(libs.plugins.kotlin.compose)
 	alias(libs.plugins.kotlin.serialization)
 }
@@ -98,6 +99,12 @@ android {
 }
 
 base.archivesName.set("jellyfin-androidtv-v${project.getVersionName()}")
+
+// Keep the generated baseline profile in the source tree so it is reviewed and versioned
+// together with the code it describes.
+baselineProfile {
+	saveInSrc = true
+}
 
 tasks.register("versionTxt") {
 	val path = layout.buildDirectory.asFile.get().resolve("version.txt")

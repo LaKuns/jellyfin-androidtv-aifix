@@ -27,7 +27,6 @@ baselineProfile {
 	// Generate the profile on the device that is attached over adb instead of a managed
 	// emulator: the boxes used for this fork are physical devices.
 	useConnectedDevices = true
-	saveInSrc = true
 }
 
 dependencies {
