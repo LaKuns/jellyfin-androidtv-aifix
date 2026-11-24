@@ -261,6 +261,10 @@ public class FullDetailsFragment extends Fragment implements RecordingIndicatorV
             startClock();
         }
 
+        if (mBaseItem != null) {
+            backgroundService.getValue().setBackground(mBaseItem);
+        }
+
         //Update information that may have changed - delay slightly to allow changes to take on the server
         mLoopHandler.postDelayed(new Runnable() {
             @Override
