@@ -1,5 +1,7 @@
 plugins {
-	alias(libs.plugins.android.test)
+	// AGP is already on the build classpath through the root project, so the plugin is
+	// applied without a version here.
+	id("com.android.test")
 	alias(libs.plugins.androidx.baselineprofile)
 }
 
