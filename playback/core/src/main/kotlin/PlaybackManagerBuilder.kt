@@ -7,6 +7,7 @@ import org.jellyfin.playback.core.backend.PlayerBackend
 import org.jellyfin.playback.core.mediastream.MediaStreamResolver
 import org.jellyfin.playback.core.mediastream.MediaStreamService
 import org.jellyfin.playback.core.plugin.PlaybackPlugin
+import org.jellyfin.playback.core.plugin.PlaybackRecoveryService
 import org.jellyfin.playback.core.plugin.PlayerService
 import org.jellyfin.playback.core.queue.QueueService
 import org.jellyfin.playback.core.timedevent.TimedEventService
@@ -50,6 +51,7 @@ class PlaybackManagerBuilder(context: Context) {
 
 		// Add default services
 		services.add(QueueService())
+		services.add(PlaybackRecoveryService())
 		services.add(MediaStreamService(mediaStreamResolvers, 15.seconds))
 		services.add(TimedEventService())
 

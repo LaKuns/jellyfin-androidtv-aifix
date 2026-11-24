@@ -3,6 +3,8 @@ package org.jellyfin.playback.jellyfin.mediastream
 import org.jellyfin.playback.core.mediastream.MediaConversionMethod
 import org.jellyfin.playback.core.mediastream.MediaStreamResolver
 import org.jellyfin.playback.core.mediastream.PlayableMediaStream
+import org.jellyfin.playback.core.mediastream.PlaybackDegradation
+import org.jellyfin.playback.core.mediastream.playbackDegradation
 import org.jellyfin.playback.core.queue.QueueEntry
 import org.jellyfin.playback.jellyfin.queue.baseItem
 import org.jellyfin.playback.jellyfin.queue.mediaSourceId
@@ -28,59 +30,71 @@ class JellyfinMediaStreamResolver(
 		val baseItem = queueEntry.baseItem
 		if (baseItem == null || !supportedMediaTypes.contains(baseItem.mediaType)) return null
 
-		val mediaInfo = getPlaybackInfo(baseItem, queueEntry.mediaSourceId)
+		// Playback starts as direct play. When the player reported an error the entry is degraded
+		// and the server is asked for a stream that is more likely to play (see
+		// [PlaybackDegradation]).
+		val degradation = queueEntry.playbackDegradation ?: PlaybackDegradation.NONE
+		val mediaInfo = getPlaybackInfo(baseItem, queueEntry.mediaSourceId, degradation)
+		val source = mediaInfo.mediaSource
 
-		return when {
-			// Direct play video
-			mediaInfo.mediaSource.supportsDirectPlay && baseItem.mediaType == MediaType.VIDEO -> mediaInfo.toStream(
+		// Direct play video
+		if (degradation == PlaybackDegradation.NONE && source.supportsDirectPlay && baseItem.mediaType == MediaType.VIDEO) {
+			return mediaInfo.toStream(
 				queueEntry = queueEntry,
 				conversionMethod = MediaConversionMethod.None,
 				url = api.videosApi.getVideoStreamUrl(
 					itemId = baseItem.id,
-					container = mediaInfo.mediaSource.container,
-					mediaSourceId = mediaInfo.mediaSource.id,
+					container = source.container,
+					mediaSourceId = source.id,
 					static = true,
-					tag = mediaInfo.mediaSource.eTag,
-					liveStreamId = mediaInfo.mediaSource.liveStreamId,
+					tag = source.eTag,
+					liveStreamId = source.liveStreamId,
 				)
 			)
+		}
 
-			// Direct play audio
-			mediaInfo.mediaSource.supportsDirectPlay && baseItem.mediaType == MediaType.AUDIO -> mediaInfo.toStream(
+		// Direct play audio
+		if (degradation == PlaybackDegradation.NONE && source.supportsDirectPlay && baseItem.mediaType == MediaType.AUDIO) {
+			return mediaInfo.toStream(
 				queueEntry = queueEntry,
 				conversionMethod = MediaConversionMethod.None,
 				url = api.audioApi.getAudioStreamUrl(
 					itemId = baseItem.id,
-					container = mediaInfo.mediaSource.container,
-					mediaSourceId = mediaInfo.mediaSource.id,
+					container = source.container,
+					mediaSourceId = source.id,
 					static = true,
-					tag = mediaInfo.mediaSource.eTag,
-					liveStreamId = mediaInfo.mediaSource.liveStreamId,
+					tag = source.eTag,
+					liveStreamId = source.liveStreamId,
 				)
 			)
+		}
 
-			// Remux (direct stream)
-			mediaInfo.mediaSource.supportsDirectStream && mediaInfo.mediaSource.transcodingUrl != null -> mediaInfo.toStream(
+		// Remux (direct stream)
+		if (degradation != PlaybackDegradation.TRANSCODE && source.supportsDirectStream && source.transcodingUrl != null) {
+			return mediaInfo.toStream(
 				queueEntry = queueEntry,
 				conversionMethod = MediaConversionMethod.Remux,
-				url = api.createUrl(requireNotNull(mediaInfo.mediaSource.transcodingUrl), ignorePathParameters = true)
+				url = api.createUrl(requireNotNull(source.transcodingUrl), ignorePathParameters = true)
 			)
+		}
 
-			// Transcode
-			mediaInfo.mediaSource.supportsTranscoding && mediaInfo.mediaSource.transcodingUrl != null -> mediaInfo.toStream(
+		// Transcode
+		if (source.supportsTranscoding && source.transcodingUrl != null) {
+			return mediaInfo.toStream(
 				queueEntry = queueEntry,
 				conversionMethod = MediaConversionMethod.Transcode,
-				url = api.createUrl(requireNotNull(mediaInfo.mediaSource.transcodingUrl), ignorePathParameters = true)
+				url = api.createUrl(requireNotNull(source.transcodingUrl), ignorePathParameters = true)
 			)
-
-			// No compatible stream found
-			else -> null
 		}
+
+		// No compatible stream found
+		return null
 	}
 
 	private suspend fun getPlaybackInfo(
 		item: BaseItemDto,
 		mediaSourceId: String? = null,
+		degradation: PlaybackDegradation = PlaybackDegradation.NONE,
 	): MediaInfo {
 		val profile = deviceProfileBuilder()
 		val response by api.mediaInfoApi.getPostedPlaybackInfo(
@@ -88,10 +102,11 @@ class JellyfinMediaStreamResolver(
 			data = PlaybackInfoDto(
 				mediaSourceId = mediaSourceId,
 				deviceProfile = profile,
-				enableDirectPlay = true,
-				enableDirectStream = true,
+				enableDirectPlay = degradation == PlaybackDegradation.NONE,
+				enableDirectStream = degradation != PlaybackDegradation.TRANSCODE,
 				enableTranscoding = true,
-				allowVideoStreamCopy = true,
+				// A remux may copy the streams, a transcode must re-encode them.
+				allowVideoStreamCopy = degradation != PlaybackDegradation.TRANSCODE,
 				allowAudioStreamCopy = true,
 				autoOpenLiveStream = false,
 			)

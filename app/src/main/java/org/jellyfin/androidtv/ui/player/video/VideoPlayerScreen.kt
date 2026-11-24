@@ -48,6 +48,7 @@ fun VideoPlayerScreen() {
 	val coroutineScope = rememberCoroutineScope()
 	val mediaToastRegistry = remember { MediaToastRegistry(coroutineScope) }
 	rememberPlaybackManagerMediaToastEmitter(playbackManager, mediaToastRegistry)
+	rememberPlaybackRecoveryToastEmitter(playbackManager)
 
 	Box(
 		modifier = Modifier

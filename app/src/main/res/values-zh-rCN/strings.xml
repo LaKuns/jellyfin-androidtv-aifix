@@ -725,4 +725,7 @@
     <string name="repeat_mode_none">不循环</string>
     <string name="repeat_mode_once">单次重复</string>
     <string name="repeat_mode_infinite">重复播放</string>
-    <string name="speed_multiplier">%1$s× 速度</string></resources>
+    <string name="speed_multiplier">%1$s× 速度</string>    <string name="playback_retry_remux">播放异常，正在以兼容模式重试…</string>
+    <string name="playback_retry_transcode">播放异常，正在转码重试…</string>
+    <string name="playback_failed">无法播放该视频</string>
+</resources>

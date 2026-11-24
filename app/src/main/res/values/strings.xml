@@ -739,4 +739,7 @@
     <string name="repeat_mode_none">Repeat off</string>
     <string name="repeat_mode_once">Repeat this item once</string>
     <string name="repeat_mode_infinite">Repeat this item</string>
-    <string name="speed_multiplier">%1$s× speed</string></resources>
+    <string name="speed_multiplier">%1$s× speed</string>    <string name="playback_retry_remux">Playback problem, retrying in compatibility mode…</string>
+    <string name="playback_retry_transcode">Playback problem, retrying with transcoding…</string>
+    <string name="playback_failed">Unable to play this video</string>
+</resources>
