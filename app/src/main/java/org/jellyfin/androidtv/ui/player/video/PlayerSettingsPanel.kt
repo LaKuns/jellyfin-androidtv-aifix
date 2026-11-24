@@ -6,9 +6,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.focusable
-import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -45,6 +43,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.font.FontWeight
@@ -106,7 +105,7 @@ fun PlayerSettingsPanel(
 		timber.log.Timber.i("Player settings panel: content visible=%s", visible)
 		if (visible) {
 			// Wait for the enter animation to attach the nodes before requesting the focus.
-			delay(100)
+			delay(120)
 			runCatching { focusRequester.requestFocus() }
 		}
 	}
@@ -121,10 +120,7 @@ fun PlayerSettingsPanel(
 				Modifier
 					.fillMaxSize()
 					.background(Color.Black.copy(alpha = 0.45f))
-					.clickable(
-						interactionSource = remember { MutableInteractionSource() },
-						indication = null,
-					) { onDismiss() }
+					.pointerInput(Unit) { detectTapGestures { onDismiss() } }
 			)
 		}
 
@@ -139,8 +135,6 @@ fun PlayerSettingsPanel(
 					.fillMaxHeight()
 					.width(PANEL_WIDTH)
 					.background(Color(0xF0141414))
-					.focusRequester(focusRequester)
-					.focusable()
 					.onPreviewKeyEvent { event ->
 						if (event.type == KeyEventType.KeyDown && (event.key == Key.Back || event.key == Key.Escape)) {
 							onDismiss()
@@ -161,8 +155,14 @@ fun PlayerSettingsPanel(
 					modifier = Modifier.padding(bottom = 4.dp),
 				)
 
-				AudioTracksSection(playbackManager)
-				SubtitlesSection(playbackManager)
+				val audioRowHasFocus = AudioTracksSection(
+					playbackManager = playbackManager,
+					firstRowModifier = Modifier.focusRequester(focusRequester),
+				)
+				SubtitlesSection(
+					playbackManager = playbackManager,
+					firstRowModifier = if (audioRowHasFocus) Modifier else Modifier.focusRequester(focusRequester),
+				)
 				EpisodesSection(playbackManager)
 				PlaybackOptionsSection(playbackManager)
 
@@ -207,12 +207,13 @@ private fun PanelRow(
 	selected: Boolean? = null,
 	enabled: Boolean = true,
 	onClick: () -> Unit,
+	modifier: Modifier = Modifier,
 	content: @Composable RowScope.() -> Unit,
 ) {
 	Button(
 		onClick = onClick,
 		enabled = enabled,
-		modifier = Modifier.fillMaxWidth(),
+		modifier = modifier.fillMaxWidth(),
 		shape = RoundedCornerShape(4.dp),
 		colors = if (selected == true) selectedRowColors else rowColors,
 		contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
@@ -231,8 +232,11 @@ private fun PanelRow(
 }
 
 @Composable
-private fun AudioTracksSection(playbackManager: PlaybackManager) {
-	val backend = playbackManager.backend as? AudioTrackBackend ?: return
+private fun AudioTracksSection(
+	playbackManager: PlaybackManager,
+	firstRowModifier: Modifier = Modifier,
+): Boolean {
+	val backend = playbackManager.backend as? AudioTrackBackend ?: return false
 	var tracks by remember(backend) { mutableStateOf<List<AudioTrack>>(backend.getAudioTracks()) }
 
 	LaunchedEffect(backend) {
@@ -245,12 +249,13 @@ private fun AudioTracksSection(playbackManager: PlaybackManager) {
 		}
 	}
 
-	if (tracks.size < 2) return
+	if (tracks.size < 2) return false
 
 	SectionTitle(stringResource(R.string.lbl_audio_track))
-	tracks.forEach { track ->
+	tracks.forEachIndexed { index, track ->
 		PanelRow(
 			selected = track.isSelected,
+			modifier = if (index == 0) firstRowModifier else Modifier,
 			onClick = {
 				timber.log.Timber.i("Player settings panel: audio row clicked=%s", track.id)
 				backend.setAudioTrack(track.id)
@@ -260,16 +265,22 @@ private fun AudioTracksSection(playbackManager: PlaybackManager) {
 			Text(track.label)
 		}
 	}
+
+	return true
 }
 
 @Composable
-private fun SubtitlesSection(playbackManager: PlaybackManager) {
+private fun SubtitlesSection(
+	playbackManager: PlaybackManager,
+	firstRowModifier: Modifier = Modifier,
+) {
 	val backend = playbackManager.backend as? SubtitleTrackBackend ?: return
 	var enabled by remember(backend) { mutableStateOf(backend.isSubtitlesEnabled()) }
 
 	SectionTitle(stringResource(R.string.lbl_subtitle_track))
 	PanelRow(
 		selected = enabled,
+		modifier = firstRowModifier,
 		onClick = {
 			enabled = !enabled
 			backend.setSubtitlesEnabled(enabled)
