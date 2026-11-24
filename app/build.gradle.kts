@@ -124,6 +124,9 @@ dependencies {
 	implementation(projects.playback.media3.exoplayer)
 	implementation(projects.playback.media3.session)
 	implementation(projects.preference)
+
+	// Profile generation (P2): the generator module produces the baseline profile for this app
+	baselineProfile(projects.baselineprofile)
 	implementation(libs.jellyfin.sdk) {
 		// Change version if desired
 		val sdkVersion = findProperty("sdk.version")?.toString()
