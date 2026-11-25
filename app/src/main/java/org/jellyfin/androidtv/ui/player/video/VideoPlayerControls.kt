@@ -21,6 +21,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.graphics.Color
@@ -123,14 +124,10 @@ fun VideoPlayerControls(
 				.fillMaxWidth()
 				.height(8.dp)
 				.focusRequester(seekbarFocus)
-				.onPreviewKeyEvent { event ->
-					if (event.type != KeyEventType.KeyDown || event.key != Key.DirectionDown) {
-						return@onPreviewKeyEvent false
-					}
-
+				.focusProperties {
+					up = firstButtonFocus
 					// Without an episode row the focus cycles back to the buttons.
-					if (hasEpisodeControls) firstEpisodeFocus.requestFocus() else firstButtonFocus.requestFocus()
-					true
+					down = if (hasEpisodeControls) firstEpisodeFocus else firstButtonFocus
 				},
 		)
 
@@ -175,15 +172,17 @@ private fun EpisodeRow(
 	Row(
 		horizontalArrangement = Arrangement.spacedBy(12.dp),
 		verticalAlignment = Alignment.CenterVertically,
-		modifier = Modifier.onPreviewKeyEvent { event ->
-			if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionDown) {
-				// Cycle back to the first row, the bar has no row below the episode controls.
-				firstButtonFocus.requestFocus()
-				true
-			} else {
-				false
-			}
-		},
+		modifier = Modifier
+			.fillMaxWidth()
+			.onPreviewKeyEvent { event ->
+				if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionDown) {
+					// Cycle back to the first row, the bar has no row below the episode controls.
+					firstButtonFocus.requestFocus()
+					true
+				} else {
+					false
+				}
+			},
 	) {
 		IconButton(
 			onClick = { scope.launch { playbackManager.queue.previous() } },
@@ -197,11 +196,6 @@ private fun EpisodeRow(
 			)
 		}
 
-		SelectEpisodeButton(
-			playbackManager = playbackManager,
-			modifier = if (canPrevious) Modifier else Modifier.focusRequester(firstEpisodeFocus),
-		)
-
 		IconButton(
 			onClick = { scope.launch { playbackManager.queue.next() } },
 			enabled = canNext,
@@ -211,6 +205,14 @@ private fun EpisodeRow(
 				contentDescription = stringResource(R.string.lbl_next_episode),
 			)
 		}
+
+		Spacer(Modifier.weight(1f))
+
+		// The episode picker belongs to the right edge, it is the way out of the current episode.
+		SelectEpisodeButton(
+			playbackManager = playbackManager,
+			modifier = if (canPrevious) Modifier else Modifier.focusRequester(firstEpisodeFocus),
+		)
 	}
 }
 
