@@ -1,4 +1,4 @@
-package org.jellyfin.androidtv.ui.player.video
+﻿package org.jellyfin.androidtv.ui.player.video
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.background
@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -100,10 +101,10 @@ fun VideoPlayerControls(
 	val firstEpisodeFocus = remember { FocusRequester() }
 
 	Column(
-		verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.Bottom),
+		verticalArrangement = Arrangement.spacedBy(6.dp, Alignment.Bottom),
 	) {
 		Row(
-			horizontalArrangement = Arrangement.spacedBy(12.dp),
+			horizontalArrangement = Arrangement.spacedBy(4.dp),
 			verticalAlignment = Alignment.CenterVertically,
 			modifier = Modifier
 				.focusRestorer()
@@ -112,23 +113,25 @@ fun VideoPlayerControls(
 			PlayPauseButton(
 				playbackManager = playbackManager,
 				playState = playState,
-				modifier = Modifier.focusRequester(firstButtonFocus),
+				modifier = Modifier
+				.size(44.dp)
+				.focusRequester(firstButtonFocus),
 			)
-			RewindButton(playbackManager)
-			FastForwardButton(playbackManager)
+			RewindButton(playbackManager, Modifier.size(44.dp))
+			FastForwardButton(playbackManager, Modifier.size(44.dp))
 
 			Spacer(Modifier.weight(1f))
 
-			AudioTrackButton(playbackManager)
-			SubtitleButton(playbackManager)
+			AudioTrackButton(playbackManager, Modifier.size(44.dp))
+			SubtitleButton(playbackManager, Modifier.size(44.dp))
 
-			MoreSettingsButton(onClick = onMoreOptionsClick)
+			MoreSettingsButton(onClick = onMoreOptionsClick, modifier = Modifier.size(44.dp))
 		}
 
 		// Times sit above the ends of the bar, the way Netflix, Plex and YouTube TV do it: small,
 		// dimmed labels that do not compete with the picture, no background blocks.
 		Row(
-			horizontalArrangement = Arrangement.spacedBy(12.dp),
+			horizontalArrangement = Arrangement.spacedBy(4.dp),
 			verticalAlignment = Alignment.CenterVertically,
 			modifier = Modifier.fillMaxWidth(),
 		) {
@@ -141,7 +144,7 @@ fun VideoPlayerControls(
 			playbackManager = playbackManager,
 			modifier = Modifier
 				.fillMaxWidth()
-				.height(6.dp)
+				.height(4.dp)
 				.focusRequester(seekbarFocus)
 				.focusProperties {
 					up = firstButtonFocus
@@ -192,11 +195,11 @@ private fun EpisodeRow(
 	}
 
 	Row(
-		horizontalArrangement = Arrangement.spacedBy(12.dp),
+		horizontalArrangement = Arrangement.spacedBy(4.dp),
 		verticalAlignment = Alignment.CenterVertically,
 		modifier = Modifier
 			.fillMaxWidth()
-			.height(48.dp)
+			.height(44.dp)
 			.onPreviewKeyEvent { event ->
 				if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionDown) {
 					// Cycle back to the first row, the bar has no row below the episode controls.
@@ -209,11 +212,12 @@ private fun EpisodeRow(
 	) {
 		IconButton(
 			onClick = { scope.launch { playbackManager.queue.previous() } },
+			contentPadding = CompactButtonPadding,
 			enabled = canPrevious,
 			colors = buttonColors,
 			// A disabled node can not own the focus, so the picker takes it on the first episode.
 			modifier = Modifier
-				.size(48.dp)
+				.size(44.dp)
 				.let { if (canPrevious) it.focusRequester(firstEpisodeFocus) else it },
 		) {
 			Icon(
@@ -224,9 +228,10 @@ private fun EpisodeRow(
 
 		IconButton(
 			onClick = { scope.launch { playbackManager.queue.next() } },
+			contentPadding = CompactButtonPadding,
 			enabled = canNext,
 			colors = buttonColors,
-			modifier = Modifier.size(48.dp),
+			modifier = Modifier.size(44.dp),
 		) {
 			Icon(
 				imageVector = ImageVector.vectorResource(R.drawable.ic_next),
@@ -240,7 +245,7 @@ private fun EpisodeRow(
 			playbackManager = playbackManager,
 			colors = buttonColors,
 			modifier = Modifier
-				.size(48.dp)
+				.size(44.dp)
 				.let { if (canPrevious) it else it.focusRequester(firstEpisodeFocus) },
 		)
 	}
@@ -270,6 +275,8 @@ private fun SelectEpisodeButton(
 			}
 		},
 		modifier = modifier,
+		colors = colors,
+		contentPadding = CompactButtonPadding,
 	) {
 		Icon(
 			imageVector = ImageVector.vectorResource(R.drawable.ic_select_chapter),
@@ -300,6 +307,7 @@ private fun PlayPauseButton(
 			.onVisibilityChanged {
 				focusRequester.requestFocus()
 			},
+		contentPadding = CompactButtonPadding,
 	) {
 		AnimatedContent(playState) { playState ->
 			when (playState) {
@@ -326,8 +334,11 @@ private fun PlayPauseButton(
 @Composable
 private fun RewindButton(
 	playbackManager: PlaybackManager,
+	modifier: Modifier = Modifier,
 ) = IconButton(
 	onClick = { playbackManager.state.rewind() },
+		contentPadding = CompactButtonPadding,
+	modifier = modifier,
 ) {
 	Icon(
 		imageVector = ImageVector.vectorResource(R.drawable.ic_rewind),
@@ -338,8 +349,11 @@ private fun RewindButton(
 @Composable
 private fun FastForwardButton(
 	playbackManager: PlaybackManager,
+	modifier: Modifier = Modifier,
 ) = IconButton(
 	onClick = { playbackManager.state.fastForward() },
+		contentPadding = CompactButtonPadding,
+	modifier = modifier,
 ) {
 	Icon(
 		imageVector = ImageVector.vectorResource(R.drawable.ic_fast_forward),
@@ -350,8 +364,11 @@ private fun FastForwardButton(
 @Composable
 private fun MoreSettingsButton(
 	onClick: () -> Unit,
+	modifier: Modifier = Modifier,
 ) = IconButton(
 	onClick = onClick,
+		contentPadding = CompactButtonPadding,
+	modifier = modifier,
 ) {
 	Icon(
 		imageVector = ImageVector.vectorResource(R.drawable.ic_more),
@@ -368,6 +385,8 @@ private fun Duration.formatted(includeHours: Boolean): String {
 	return if (includeHours) "%02d:%02d:%02d".format(hours, minutes, seconds)
 	else "%02d:%02d".format(minutes, seconds)
 }
+
+private val CompactButtonPadding = PaddingValues(6.dp)
 
 private enum class PositionTextType {
 	/** The position that is playing right now. */
@@ -399,13 +418,13 @@ private fun PositionText(
 	// emphasis, the labels only give the numbers.
 	Text(
 		text = text,
-		fontSize = 13.sp,
+		fontSize = 12.sp,
 		style = LocalTextStyle.current.copy(color = Color.White.copy(alpha = 0.72f)),
 	)
 }
 
 @Composable
-private fun SubtitleButton(playbackManager: PlaybackManager) {
+private fun SubtitleButton(playbackManager: PlaybackManager, modifier: Modifier = Modifier) {
 	val backend = playbackManager.backend as? SubtitleTrackBackend ?: return
 	var enabled by remember { mutableStateOf(backend.isSubtitlesEnabled()) }
 
@@ -414,6 +433,8 @@ private fun SubtitleButton(playbackManager: PlaybackManager) {
 			enabled = !enabled
 			backend.setSubtitlesEnabled(enabled)
 		},
+		modifier = modifier,
+		contentPadding = CompactButtonPadding,
 	) {
 		Icon(
 			imageVector = ImageVector.vectorResource(R.drawable.ic_subtitles),
@@ -431,7 +452,7 @@ private fun SubtitleButton(playbackManager: PlaybackManager) {
  * in that case.
  */
 @Composable
-private fun AudioTrackButton(playbackManager: PlaybackManager) {
+private fun AudioTrackButton(playbackManager: PlaybackManager, modifier: Modifier = Modifier) {
 	val backend = playbackManager.backend as? AudioTrackBackend ?: return
 	var tracks by remember { mutableStateOf<List<AudioTrack>>(backend.getAudioTracks()) }
 	var expanded by remember { mutableStateOf(false) }
@@ -454,6 +475,8 @@ private fun AudioTrackButton(playbackManager: PlaybackManager) {
 				tracks = backend.getAudioTracks()
 				expanded = true
 			},
+			modifier = modifier,
+			contentPadding = CompactButtonPadding,
 		) {
 			Icon(
 				imageVector = ImageVector.vectorResource(R.drawable.ic_audiotrack),
@@ -484,4 +507,11 @@ private fun AudioTrackButton(playbackManager: PlaybackManager) {
 		}
 	}
 }
+
+
+
+
+
+
+
 
