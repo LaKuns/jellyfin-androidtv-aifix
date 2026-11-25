@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -150,57 +151,67 @@ fun PlayerOverlayLayout(
 	}
 }
 
-data class PlayerOverlayVisibilityState(
-	val visible: Boolean,
+/**
+ * Visibility of the overlay, readable from key handlers.
+ *
+ * The flag is backed by state instead of a value frozen at composition: a key handler that was
+ * registered once has to see whether the overlay is hidden right now, otherwise it keeps sending
+ * the presses to a control bar that is no longer there.
+ */
+class PlayerOverlayVisibilityState internal constructor(
+	private val timerVisible: MutableState<Boolean>,
+	private val windowFocused: MutableState<Boolean>,
 
 	val toggle: () -> Unit,
 	val show: () -> Unit,
 	val hide: () -> Unit,
-)
+) {
+	val visible: Boolean get() = timerVisible.value || !windowFocused.value
+}
 
 @Composable
 fun rememberPlayerOverlayVisibility(
 	timeout: Duration? = 5.seconds,
 ): PlayerOverlayVisibilityState {
 	val scope = rememberCoroutineScope()
-	var timerVisible by remember { mutableStateOf(false) }
-	var timerJob by remember { mutableStateOf<Job?>(null) }
+	val timerVisible = remember { mutableStateOf(false) }
+	val timerJob = remember { mutableStateOf<Job?>(null) }
 
 	fun show() {
-		timerJob?.cancel()
-		timerVisible = true
-		timerJob = timeout?.let { duration ->
+		timerJob.value?.cancel()
+		timerVisible.value = true
+		timerJob.value = timeout?.let { duration ->
 			scope.launch {
 				delay(duration)
-				timerVisible = false
+				timerVisible.value = false
 			}
 		}
 	}
 
 	fun hide() {
-		timerJob?.cancel()
-		timerJob = null
-		timerVisible = false
+		timerJob.value?.cancel()
+		timerJob.value = null
+		timerVisible.value = false
 	}
 
 	fun toggle() {
-		if (timerVisible) hide()
-		else show()
+		if (timerVisible.value) hide() else show()
 	}
 
 	// Force visibility when not the active window, reset timer when it changes
 	// to make sure popups keep the overlay visible
 	val windowInfo = LocalWindowInfo.current
-	val visible = timerVisible || !windowInfo.isWindowFocused
-
-	var previousIsWindowFocused by remember { mutableStateOf(windowInfo.isWindowFocused) }
+	val windowFocused = remember { mutableStateOf(windowInfo.isWindowFocused) }
 	LaunchedEffect(windowInfo.isWindowFocused) {
-		if (windowInfo.isWindowFocused != previousIsWindowFocused) show()
-		previousIsWindowFocused = windowInfo.isWindowFocused
+		if (windowInfo.isWindowFocused != windowFocused.value) {
+			windowFocused.value = windowInfo.isWindowFocused
+			if (windowInfo.isWindowFocused) show()
+		}
 	}
 
 	return PlayerOverlayVisibilityState(
-		visible = visible,
+		timerVisible = timerVisible,
+		windowFocused = windowFocused,
 		toggle = ::toggle,
 		show = ::show,
 		hide = ::hide,

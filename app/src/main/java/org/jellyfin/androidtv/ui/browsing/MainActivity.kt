@@ -28,6 +28,7 @@ import org.jellyfin.androidtv.ui.base.JellyfinTheme
 import org.jellyfin.androidtv.ui.base.ProvideLocalInteractionTracker
 import org.jellyfin.androidtv.ui.composable.compat.AppNavigationHost
 import org.jellyfin.androidtv.ui.navigation.NavigationRepository
+import org.jellyfin.androidtv.ui.player.base.PlayerKeyHandler
 import org.jellyfin.androidtv.ui.screensaver.InAppScreensaver
 import org.jellyfin.androidtv.ui.settings.compat.MainActivitySettings
 import org.jellyfin.androidtv.ui.startup.StartupActivity
@@ -153,6 +154,18 @@ class MainActivity : FragmentActivity() {
 
 	private fun onKeyEvent(keyCode: Int, event: KeyEvent?): Boolean = supportFragmentManager.fragments
 		.any { it.onKeyEvent(keyCode, event) }
+
+	/**
+	 * The player gets the keys before the view hierarchy does. When its overlay hid itself the
+	 * focused node is gone and the keys were consumed on the way to the views without anybody
+	 * reacting, so onKeyDown never saw them.
+	 */
+	override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+		if (event.action == KeyEvent.ACTION_DOWN && PlayerKeyHandler.dispatch(event.keyCode)) {
+			return true
+		}
+		return super.dispatchKeyEvent(event)
+	}
 
 	override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean =
 		onKeyEvent(keyCode, event) || super.onKeyDown(keyCode, event)

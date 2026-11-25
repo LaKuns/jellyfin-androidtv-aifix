@@ -3,14 +3,18 @@ package org.jellyfin.androidtv.ui.player.video
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import android.view.KeyEvent
 import org.jellyfin.androidtv.ui.composable.rememberQueueEntry
+import org.jellyfin.androidtv.ui.player.base.PlayerKeyHandler
 import org.jellyfin.androidtv.ui.player.base.PlayerOverlayLayout
 import org.jellyfin.androidtv.ui.player.base.rememberPlayerOverlayVisibility
 import org.jellyfin.androidtv.ui.player.base.toast.MediaToastRegistry
@@ -32,6 +36,33 @@ fun VideoPlayerOverlay(
 	val visibilityState = rememberPlayerOverlayVisibility(timeout = if (playState == PlayState.PAUSED) null else 5.seconds)
 	LaunchedEffect(playState) {
 		if (playState == PlayState.PAUSED || playState == PlayState.PLAYING) visibilityState.show()
+	}
+
+	// The remote control is handled by the activity while the player is on screen, so it works
+	// even when the overlay hid itself and nothing holds the focus (see PlayerKeyHandler).
+	val currentVisibilityState = rememberUpdatedState(visibilityState)
+	DisposableEffect(Unit) {
+		PlayerKeyHandler.setHandler { keyCode ->
+			val state = currentVisibilityState.value
+			when {
+				// Back closes the controls first and leaves the player on the second press.
+				keyCode == KeyEvent.KEYCODE_BACK -> if (state.visible) {
+					state.hide()
+					true
+				} else {
+					false
+				}
+
+				// The first key of a hidden overlay only wakes it up, the next one moves the focus.
+				!state.visible -> {
+					state.show()
+					true
+				}
+
+				else -> false
+			}
+		}
+		onDispose { PlayerKeyHandler.setHandler(null) }
 	}
 	var showSettings by remember { mutableStateOf(false) }
 	LaunchedEffect(showSettings) {
