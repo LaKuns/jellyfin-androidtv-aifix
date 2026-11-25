@@ -1,4 +1,4 @@
-﻿package org.jellyfin.androidtv.ui.player.video
+package org.jellyfin.androidtv.ui.player.video
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.background
@@ -128,30 +128,31 @@ fun VideoPlayerControls(
 			MoreSettingsButton(onClick = onMoreOptionsClick, modifier = Modifier.size(44.dp))
 		}
 
-		// Times sit above the ends of the bar, the way Netflix, Plex and YouTube TV do it: small,
-		// dimmed labels that do not compete with the picture, no background blocks.
+		// Times and bar on one line, the layout Plex and YouTube TV use: the elapsed time and the
+		// duration are plain small labels at the two ends of the bar, the bar takes the space
+		// between them. No background blocks, the labels stay secondary.
 		Row(
-			horizontalArrangement = Arrangement.spacedBy(4.dp),
+			horizontalArrangement = Arrangement.spacedBy(10.dp),
 			verticalAlignment = Alignment.CenterVertically,
 			modifier = Modifier.fillMaxWidth(),
 		) {
 			PositionText(playbackManager, PositionTextType.CURRENT)
-			Spacer(Modifier.weight(1f))
+
+			PlayerSeekbar(
+				playbackManager = playbackManager,
+				modifier = Modifier
+					.weight(1f)
+					.height(4.dp)
+					.focusRequester(seekbarFocus)
+					.focusProperties {
+						up = firstButtonFocus
+						// Without an episode row the focus cycles back to the buttons.
+						down = if (hasEpisodeControls) firstEpisodeFocus else firstButtonFocus
+					},
+			)
+
 			PositionText(playbackManager, PositionTextType.DURATION)
 		}
-
-		PlayerSeekbar(
-			playbackManager = playbackManager,
-			modifier = Modifier
-				.fillMaxWidth()
-				.height(4.dp)
-				.focusRequester(seekbarFocus)
-				.focusProperties {
-					up = firstButtonFocus
-					// Without an episode row the focus cycles back to the buttons.
-					down = if (hasEpisodeControls) firstEpisodeFocus else firstButtonFocus
-				},
-		)
 
 		if (hasEpisodeControls) {
 			EpisodeRow(
