@@ -1,7 +1,9 @@
 package org.jellyfin.androidtv.ui.player.video
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.foundation.background
 import androidx.compose.foundation.focusGroup
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -36,6 +39,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.unit.DpOffset
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.delay
@@ -118,18 +122,30 @@ fun VideoPlayerControls(
 			MoreSettingsButton(onClick = onMoreOptionsClick)
 		}
 
-		PlayerSeekbar(
-			playbackManager = playbackManager,
-			modifier = Modifier
-				.fillMaxWidth()
-				.height(8.dp)
-				.focusRequester(seekbarFocus)
-				.focusProperties {
-					up = firstButtonFocus
-					// Without an episode row the focus cycles back to the buttons.
-					down = if (hasEpisodeControls) firstEpisodeFocus else firstButtonFocus
-				},
-		)
+		// Current position, bar, duration: the two times sit at the ends of the bar so the
+		// viewer reads both where the bar is, without a separate label line.
+		Row(
+			horizontalArrangement = Arrangement.spacedBy(12.dp),
+			verticalAlignment = Alignment.CenterVertically,
+			modifier = Modifier.fillMaxWidth(),
+		) {
+			PositionText(playbackManager, PositionTextType.CURRENT)
+
+			PlayerSeekbar(
+				playbackManager = playbackManager,
+				modifier = Modifier
+					.weight(1f)
+					.height(8.dp)
+					.focusRequester(seekbarFocus)
+					.focusProperties {
+						up = firstButtonFocus
+						// Without an episode row the focus cycles back to the buttons.
+						down = if (hasEpisodeControls) firstEpisodeFocus else firstButtonFocus
+					},
+			)
+
+			PositionText(playbackManager, PositionTextType.DURATION)
+		}
 
 		if (hasEpisodeControls) {
 			EpisodeRow(
@@ -137,14 +153,6 @@ fun VideoPlayerControls(
 				firstButtonFocus = firstButtonFocus,
 				firstEpisodeFocus = firstEpisodeFocus,
 			)
-		}
-
-		Row(
-			horizontalArrangement = Arrangement.spacedBy(12.dp),
-			modifier = Modifier.fillMaxWidth(),
-		) {
-			Spacer(Modifier.weight(1f))
-			PositionText(playbackManager)
 		}
 	}
 }
@@ -206,9 +214,8 @@ private fun EpisodeRow(
 			)
 		}
 
-		Spacer(Modifier.weight(1f))
-
-		// The episode picker belongs to the right edge, it is the way out of the current episode.
+		// The picker stays in the left group right after the episode buttons: a control at the
+		// far right edge would move the eyes across the whole screen for one action.
 		SelectEpisodeButton(
 			playbackManager = playbackManager,
 			modifier = if (canPrevious) Modifier else Modifier.focusRequester(firstEpisodeFocus),
@@ -338,9 +345,18 @@ private fun Duration.formatted(includeHours: Boolean): String {
 	else "%02d:%02d".format(minutes, seconds)
 }
 
+private enum class PositionTextType {
+	/** The position that is playing right now. */
+	CURRENT,
+
+	/** The duration of the item. */
+	DURATION,
+}
+
 @Composable
 private fun PositionText(
 	playbackManager: PlaybackManager,
+	type: PositionTextType,
 ) {
 	val positionInfo by rememberPlayerPositionInfo(playbackManager, precision = 1.seconds)
 	if (positionInfo.duration == Duration.ZERO) return
@@ -348,17 +364,26 @@ private fun PositionText(
 	val text by remember {
 		derivedStateOf {
 			val includeHours = positionInfo.duration.inWholeMinutes >= 60
-			val activeFormatted = positionInfo.active.formatted(includeHours)
-			val durationFormatted = positionInfo.duration.formatted(includeHours)
-
-			"$activeFormatted / $durationFormatted"
+			when (type) {
+				PositionTextType.CURRENT -> positionInfo.active.formatted(includeHours)
+				PositionTextType.DURATION -> positionInfo.duration.formatted(includeHours)
+			}
 		}
 	}
 
-	Text(
-		text = text,
-		style = LocalTextStyle.current.copy(color = Color.White)
-	)
+	// A slight scrim keeps the time readable over a bright scene, the gradient alone is not
+	// enough when the picture is white at the bottom.
+	Box(
+		modifier = Modifier
+			.background(Color.Black.copy(alpha = 0.45f), RoundedCornerShape(4.dp))
+			.padding(horizontal = 8.dp, vertical = 2.dp),
+	) {
+		Text(
+			text = text,
+			fontSize = 14.sp,
+			style = LocalTextStyle.current.copy(color = Color.White.copy(alpha = 0.92f)),
+		)
+	}
 }
 
 @Composable
@@ -441,3 +466,4 @@ private fun AudioTrackButton(playbackManager: PlaybackManager) {
 		}
 	}
 }
+
