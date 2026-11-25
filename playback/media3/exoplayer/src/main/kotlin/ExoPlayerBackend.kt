@@ -54,6 +54,7 @@ import org.jellyfin.playback.core.support.PlaybackBufferSizing
 import org.jellyfin.playback.core.timedevent.TimedEvent
 import org.jellyfin.playback.core.ui.PlayerSubtitleView
 import org.jellyfin.playback.core.ui.PlayerSurfaceView
+import org.jellyfin.playback.media3.exoplayer.support.PlaybackQualityMonitor
 import org.jellyfin.playback.media3.exoplayer.support.getPlaySupportReport
 import org.jellyfin.playback.media3.exoplayer.support.toFormats
 import timber.log.Timber
@@ -74,6 +75,7 @@ class ExoPlayerBackend(
 
 	private var currentStream: PlayableMediaStream? = null
 	private var subtitleView: SubtitleView? = null
+	private var qualityMonitor: PlaybackQualityMonitor? = null
 	private val audioPipeline = ExoPlayerAudioPipeline()
 	private val audioAttributeState = AudioAttributeState()
 	private val timedEventState = TimedEventState()
@@ -211,6 +213,10 @@ class ExoPlayerBackend(
 				// measurement is used to request a bitrate the device can sustain.
 				player.addAnalyticsListener(ThroughputAnalyticsListener(context))
 
+				// Report the audio/video offset, the dropped frames and the audio underruns with
+				// the same log line the old player uses, so one gate script reads both players.
+				qualityMonitor = PlaybackQualityMonitor(player)
+
 				if (exoPlayerOptions.enableDebugLogging) {
 					player.addAnalyticsListener(EventLogger())
 				}
@@ -270,6 +276,9 @@ class ExoPlayerBackend(
 		override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
 			val queueEntry = mediaItem?.localConfiguration?.tag as? QueueEntry
 			audioPipeline.normalizationGain = queueEntry?.normalizationGain
+
+			// The numbers describe one item, a new item starts from a clean slate.
+			qualityMonitor?.reset()
 
 			// The subtitle selection belongs to the item, so it is applied again when the
 			// item changes. The tracks of the new item are not known yet, the selection is
