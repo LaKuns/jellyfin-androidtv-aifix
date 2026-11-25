@@ -100,7 +100,7 @@ fun VideoPlayerControls(
 	val firstEpisodeFocus = remember { FocusRequester() }
 
 	Column(
-		verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.Bottom),
+		verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.Bottom),
 	) {
 		Row(
 			horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -196,7 +196,7 @@ private fun EpisodeRow(
 		verticalAlignment = Alignment.CenterVertically,
 		modifier = Modifier
 			.fillMaxWidth()
-			.height(56.dp)
+			.height(48.dp)
 			.onPreviewKeyEvent { event ->
 				if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionDown) {
 					// Cycle back to the first row, the bar has no row below the episode controls.

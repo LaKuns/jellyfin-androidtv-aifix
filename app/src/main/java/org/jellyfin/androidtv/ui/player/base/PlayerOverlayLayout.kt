@@ -1,4 +1,4 @@
-package org.jellyfin.androidtv.ui.player.base
+﻿package org.jellyfin.androidtv.ui.player.base
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -82,7 +82,7 @@ fun PlayerOverlayLayout(
 			Box(
 				modifier = Modifier
 					.fillMaxWidth()
-					.fillMaxHeight(1f / 3)
+					.fillMaxHeight(2f / 5)
 					.background(
 						brush = Brush.verticalGradient(
 							colors = listOf(
@@ -118,7 +118,7 @@ fun PlayerOverlayLayout(
 				contentAlignment = Alignment.BottomCenter,
 				modifier = Modifier
 					.fillMaxWidth()
-					.fillMaxHeight(1f / 3)
+					.fillMaxHeight(2f / 5)
 					.background(
 						brush = Brush.verticalGradient(
 							colors = listOf(
@@ -217,3 +217,4 @@ fun rememberPlayerOverlayVisibility(
 		hide = ::hide,
 	)
 }
+
