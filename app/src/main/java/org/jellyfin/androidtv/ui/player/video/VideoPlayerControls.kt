@@ -16,6 +16,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -24,19 +25,22 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.onVisibilityChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.delay
-import org.jellyfin.androidtv.R
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import org.jellyfin.androidtv.R
 import org.jellyfin.androidtv.preference.UserPreferences
-import org.jellyfin.androidtv.ui.itemdetail.EpisodeCatalog
-import org.jellyfin.androidtv.ui.playback.EpisodePickerDialog
-import org.jellyfin.androidtv.ui.playback.rewrite.RewriteMediaManager
 import org.jellyfin.androidtv.ui.base.Icon
 import org.jellyfin.androidtv.ui.base.LocalTextStyle
 import org.jellyfin.androidtv.ui.base.Text
@@ -45,6 +49,9 @@ import org.jellyfin.androidtv.ui.base.popover.Popover
 import org.jellyfin.androidtv.ui.base.popover.PopoverMenu
 import org.jellyfin.androidtv.ui.base.popover.PopoverMenuCheckboxItem
 import org.jellyfin.androidtv.ui.composable.rememberPlayerPositionInfo
+import org.jellyfin.androidtv.ui.itemdetail.EpisodeCatalog
+import org.jellyfin.androidtv.ui.playback.EpisodePickerDialog
+import org.jellyfin.androidtv.ui.playback.rewrite.RewriteMediaManager
 import org.jellyfin.androidtv.ui.player.base.PlayerSeekbar
 import org.jellyfin.playback.core.PlaybackManager
 import org.jellyfin.playback.core.backend.AudioTrack
@@ -60,23 +67,45 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.DurationUnit
 
+/**
+ * The control bar of the video player, laid out like the old player:
+ *
+ * - first row: playback buttons and the rarely used track buttons,
+ * - second row: the progress bar, which owns the focus while the user scrubs,
+ * - third row: the episode controls, only for an episode that belongs to a series.
+ *
+ * A movie or a single video has no third row; pressing down on the progress bar cycles the focus
+ * back to the first row instead of moving into an empty area.
+ */
 @Composable
 fun VideoPlayerControls(
 	playbackManager: PlaybackManager = koinInject(),
 	onMoreOptionsClick: () -> Unit = {},
 ) {
 	val playState by playbackManager.state.playState.collectAsState()
+	val entry by playbackManager.queue.entry.collectAsState()
+	val item = entry?.baseItem
+	val hasEpisodeControls = item?.type == BaseItemKind.EPISODE && item?.seriesId != null
+
+	val firstButtonFocus = remember { FocusRequester() }
+	val seekbarFocus = remember { FocusRequester() }
+	val firstEpisodeFocus = remember { FocusRequester() }
 
 	Column(
-		verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.Bottom),
+		verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.Bottom),
 	) {
 		Row(
 			horizontalArrangement = Arrangement.spacedBy(12.dp),
+			verticalAlignment = Alignment.CenterVertically,
 			modifier = Modifier
 				.focusRestorer()
-				.focusGroup()
+				.focusGroup(),
 		) {
-			PlayPauseButton(playbackManager, playState)
+			PlayPauseButton(
+				playbackManager = playbackManager,
+				playState = playState,
+				modifier = Modifier.focusRequester(firstButtonFocus),
+			)
 			RewindButton(playbackManager)
 			FastForwardButton(playbackManager)
 
@@ -84,7 +113,6 @@ fun VideoPlayerControls(
 
 			AudioTrackButton(playbackManager)
 			SubtitleButton(playbackManager)
-			if (playState == PlayState.PAUSED) SelectEpisodeButton(playbackManager)
 
 			MoreSettingsButton(onClick = onMoreOptionsClick)
 		}
@@ -93,14 +121,30 @@ fun VideoPlayerControls(
 			playbackManager = playbackManager,
 			modifier = Modifier
 				.fillMaxWidth()
-				.height(4.dp)
+				.height(8.dp)
+				.focusRequester(seekbarFocus)
+				.onPreviewKeyEvent { event ->
+					if (event.type != KeyEventType.KeyDown || event.key != Key.DirectionDown) {
+						return@onPreviewKeyEvent false
+					}
+
+					// Without an episode row the focus cycles back to the buttons.
+					if (hasEpisodeControls) firstEpisodeFocus.requestFocus() else firstButtonFocus.requestFocus()
+					true
+				},
 		)
+
+		if (hasEpisodeControls) {
+			EpisodeRow(
+				playbackManager = playbackManager,
+				firstButtonFocus = firstButtonFocus,
+				firstEpisodeFocus = firstEpisodeFocus,
+			)
+		}
 
 		Row(
 			horizontalArrangement = Arrangement.spacedBy(12.dp),
-			modifier = Modifier
-				.focusRestorer()
-				.focusGroup()
+			modifier = Modifier.fillMaxWidth(),
 		) {
 			Spacer(Modifier.weight(1f))
 			PositionText(playbackManager)
@@ -108,24 +152,92 @@ fun VideoPlayerControls(
 	}
 }
 
+/**
+ * The episode controls below the progress bar: previous episode, next episode and the episode
+ * picker. The buttons are icons only, the content description names them for screen readers.
+ */
 @Composable
-private fun SelectEpisodeButton(playbackManager: PlaybackManager) {
+private fun EpisodeRow(
+	playbackManager: PlaybackManager,
+	firstButtonFocus: FocusRequester,
+	firstEpisodeFocus: FocusRequester,
+) {
+	val scope = rememberCoroutineScope()
+	val entry by playbackManager.queue.entry.collectAsState()
+	var canPrevious by remember { mutableStateOf(false) }
+	var canNext by remember { mutableStateOf(false) }
+
+	LaunchedEffect(entry) {
+		canPrevious = runCatching { playbackManager.queue.peekPrevious() }.getOrNull() != null
+		canNext = runCatching { playbackManager.queue.peekNext() }.getOrNull() != null
+	}
+
+	Row(
+		horizontalArrangement = Arrangement.spacedBy(12.dp),
+		verticalAlignment = Alignment.CenterVertically,
+		modifier = Modifier.onPreviewKeyEvent { event ->
+			if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionDown) {
+				// Cycle back to the first row, the bar has no row below the episode controls.
+				firstButtonFocus.requestFocus()
+				true
+			} else {
+				false
+			}
+		},
+	) {
+		IconButton(
+			onClick = { scope.launch { playbackManager.queue.previous() } },
+			enabled = canPrevious,
+			// A disabled node can not own the focus, so the picker takes it on the first episode.
+			modifier = if (canPrevious) Modifier.focusRequester(firstEpisodeFocus) else Modifier,
+		) {
+			Icon(
+				imageVector = ImageVector.vectorResource(R.drawable.ic_previous_episode),
+				contentDescription = stringResource(R.string.lbl_previous_episode),
+			)
+		}
+
+		SelectEpisodeButton(
+			playbackManager = playbackManager,
+			modifier = if (canPrevious) Modifier else Modifier.focusRequester(firstEpisodeFocus),
+		)
+
+		IconButton(
+			onClick = { scope.launch { playbackManager.queue.next() } },
+			enabled = canNext,
+		) {
+			Icon(
+				imageVector = ImageVector.vectorResource(R.drawable.ic_next),
+				contentDescription = stringResource(R.string.lbl_next_episode),
+			)
+		}
+	}
+}
+
+@Composable
+private fun SelectEpisodeButton(
+	playbackManager: PlaybackManager,
+	modifier: Modifier = Modifier,
+) {
 	val entry by playbackManager.queue.entry.collectAsState()
 	val current = entry?.baseItem?.takeIf { it.type == BaseItemKind.EPISODE && it.seriesId != null } ?: return
 	val context = LocalContext.current
 	val owner = LocalLifecycleOwner.current
 	val api = koinInject<ApiClient>()
 	val preferences = koinInject<UserPreferences>()
-	IconButton(onClick = {
-		EpisodePickerDialog.show(context, owner, api, current) { episode ->
-			val items = EpisodeCatalog(api).playbackItems(episode, preferences[UserPreferences.mediaQueuingEnabled])
-			playbackManager.state.pause()
-			playbackManager.queue.clear()
-			playbackManager.queue.addSupplier(RewriteMediaManager.BaseItemQueueSupplier(api, items, false))
-			playbackManager.state.play()
-			true
-		}
-	}) {
+	IconButton(
+		onClick = {
+			EpisodePickerDialog.show(context, owner, api, current) { episode ->
+				val items = EpisodeCatalog(api).playbackItems(episode, preferences[UserPreferences.mediaQueuingEnabled])
+				playbackManager.state.pause()
+				playbackManager.queue.clear()
+				playbackManager.queue.addSupplier(RewriteMediaManager.BaseItemQueueSupplier(api, items, false))
+				playbackManager.state.play()
+				true
+			}
+		},
+		modifier = modifier,
+	) {
 		Icon(
 			imageVector = ImageVector.vectorResource(R.drawable.ic_select_chapter),
 			contentDescription = stringResource(R.string.lbl_select_episode),
@@ -137,6 +249,7 @@ private fun SelectEpisodeButton(playbackManager: PlaybackManager) {
 private fun PlayPauseButton(
 	playbackManager: PlaybackManager,
 	playState: PlayState,
+	modifier: Modifier = Modifier,
 ) {
 	val focusRequester = remember { FocusRequester() }
 	IconButton(
@@ -149,11 +262,11 @@ private fun PlayPauseButton(
 				PlayState.PAUSED -> playbackManager.state.unpause()
 			}
 		},
-		modifier = Modifier
+		modifier = modifier
 			.focusRequester(focusRequester)
 			.onVisibilityChanged {
 				focusRequester.requestFocus()
-			}
+			},
 	) {
 		AnimatedContent(playState) { playState ->
 			when (playState) {

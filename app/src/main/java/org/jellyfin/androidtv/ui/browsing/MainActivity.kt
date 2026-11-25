@@ -161,7 +161,7 @@ class MainActivity : FragmentActivity() {
 	 * reacting, so onKeyDown never saw them.
 	 */
 	override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-		if (event.action == KeyEvent.ACTION_DOWN && PlayerKeyHandler.dispatch(event.keyCode)) {
+		if (event.action == KeyEvent.ACTION_DOWN && PlayerKeyHandler.dispatch(event.keyCode, event.repeatCount)) {
 			return true
 		}
 		return super.dispatchKeyEvent(event)

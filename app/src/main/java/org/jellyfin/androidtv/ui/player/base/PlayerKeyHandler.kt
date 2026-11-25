@@ -11,16 +11,18 @@ import timber.log.Timber
  *
  * The activity therefore asks this handler first. The player registers it while it is on screen
  * and owns the keys that are meant to wake the overlay (any key while it is hidden, back while
- * it is shown); everything else is left to the normal focus navigation.
+ * it is shown, the direct seek of the left and right keys); everything else is left to the
+ * normal focus navigation.
  */
 object PlayerKeyHandler {
+	/** [repeatCount] is the auto-repeat counter of the key event, used to accelerate a seek. */
 	@Volatile
-	private var handler: ((Int) -> Boolean)? = null
+	private var handler: ((keyCode: Int, repeatCount: Int) -> Boolean)? = null
 
-	fun setHandler(handler: ((Int) -> Boolean)?) {
+	fun setHandler(handler: ((keyCode: Int, repeatCount: Int) -> Boolean)?) {
 		this.handler = handler
 		Timber.i("Player key handler %s", if (handler == null) "cleared" else "registered")
 	}
 
-	fun dispatch(keyCode: Int): Boolean = handler?.invoke(keyCode) == true
+	fun dispatch(keyCode: Int, repeatCount: Int): Boolean = handler?.invoke(keyCode, repeatCount) == true
 }

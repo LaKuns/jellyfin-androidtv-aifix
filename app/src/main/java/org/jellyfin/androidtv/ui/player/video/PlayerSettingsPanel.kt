@@ -165,7 +165,6 @@ fun PlayerSettingsPanel(
 					playbackManager = playbackManager,
 					firstRowModifier = if (audioRowHasFocus) Modifier else Modifier.focusRequester(focusRequester),
 				)
-				EpisodesSection(playbackManager)
 				PlaybackOptionsSection(playbackManager)
 
 				SectionDivider()
@@ -290,37 +289,6 @@ private fun SubtitlesSection(
 		},
 	) {
 		Text(stringResource(if (enabled) R.string.lbl_subtitles_on else R.string.lbl_subtitles_off))
-	}
-}
-
-@Composable
-private fun EpisodesSection(playbackManager: PlaybackManager) {
-	val entry by playbackManager.queue.entry.collectAsState()
-	val baseItem = entry?.baseItem ?: return
-	if (baseItem.type != BaseItemKind.EPISODE) return
-
-	val entryIndex by playbackManager.queue.entryIndex.collectAsState()
-	val queueSize = playbackManager.queue.estimatedSize
-	val coroutineScope = rememberCoroutineScope()
-
-	SectionTitle(stringResource(R.string.lbl_select_episode))
-	Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-		Button(
-			onClick = { coroutineScope.launch { playbackManager.queue.previous() } },
-			enabled = entryIndex > 0,
-			shape = RoundedCornerShape(4.dp),
-			colors = rowColors,
-		) {
-			Text(stringResource(R.string.lbl_prev_item))
-		}
-		Button(
-			onClick = { coroutineScope.launch { playbackManager.queue.next() } },
-			enabled = entryIndex < queueSize - 1,
-			shape = RoundedCornerShape(4.dp),
-			colors = rowColors,
-		) {
-			Text(stringResource(R.string.lbl_next_item))
-		}
 	}
 }
 
