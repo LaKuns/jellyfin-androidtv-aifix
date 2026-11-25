@@ -196,25 +196,43 @@ class UserPreferences(context: Context) : SharedPreferenceStore(
 		 */
 		var audioOffload = booleanPreference("audio_offload_enabled", defaultValue = false)
 
+		/*
+		 * The surround formats are disabled for direct play by default.
+		 *
+		 * The server copies those formats into the stream when the profile allows them, and this
+		 * box then hands the bitstream to its audio HAL. For EAC3 and DTS the HAL opens a PCM
+		 * device at 192 kHz with the raw flag set and never consumes it: the audio clock stalls,
+		 * the video renderer runs out of output buffers and the player drops nearly every frame.
+		 *
+		 * Measured on the box (2026-11-25, same build for both rows):
+		 * - 1080p h264 + EAC3 6ch: 52 frames in 40 s, 351 dropped, 80 audio underruns
+		 * - 1080p hevc + AAC 2ch: 427 frames, 0 dropped, 0 underruns
+		 * and with the bitstream disabled the same films transcode their audio and play at
+		 * 0 dropped frames with the A/V offset between 5 ms and 29 ms.
+		 *
+		 * The user keeps the per-format override, so a device with a correct HAL can enable a
+		 * format again.
+		 */
+
 		/**
 		 * AC3 bitstream device profile override.
 		 */
-		var bitstreamAc3 = enumPreference("bitstream_ac3_mode", BitstreamAudioMode.AUTO)
+		var bitstreamAc3 = enumPreference("bitstream_ac3_mode", BitstreamAudioMode.DISABLE)
 
 		/**
 		 * EAC3 bitstream device profile override.
 		 */
-		var bitstreamEac3 = enumPreference("bitstream_eac3_mode", BitstreamAudioMode.AUTO)
+		var bitstreamEac3 = enumPreference("bitstream_eac3_mode", BitstreamAudioMode.DISABLE)
 
 		/**
 		 * DTS bitstream device profile override.
 		 */
-		var bitstreamDts = enumPreference("bitstream_dts_mode", BitstreamAudioMode.AUTO)
+		var bitstreamDts = enumPreference("bitstream_dts_mode", BitstreamAudioMode.DISABLE)
 
 		/**
 		 * TrueHD bitstream device profile override.
 		 */
-		var bitstreamTrueHd = enumPreference("bitstream_truehd_mode", BitstreamAudioMode.AUTO)
+		var bitstreamTrueHd = enumPreference("bitstream_truehd_mode", BitstreamAudioMode.DISABLE)
 
 		/**
 		 * HDR10 device profile override.
