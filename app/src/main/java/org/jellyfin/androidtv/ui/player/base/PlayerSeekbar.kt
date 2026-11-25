@@ -20,6 +20,10 @@ fun PlayerSeekbar(
 	modifier: Modifier = Modifier,
 	colors: SeekbarColors = SeekbarDefaults.colors(),
 	playbackManager: PlaybackManager = koinInject<PlaybackManager>(),
+	/** Called with the position the user is currently scrubbing to, while the bar has the focus. */
+	onScrubProgress: ((Duration) -> Unit)? = null,
+	/** Called when a scrub starts (true) and when the seek has been issued (false). */
+	onScrubbingChange: ((Boolean) -> Unit)? = null,
 ) {
 	val playState by playbackManager.state.playState.collectAsState()
 	val positionInfo = playbackManager.state.positionInfo
@@ -37,7 +41,11 @@ fun PlayerSeekbar(
 		duration = positionInfo.duration,
 		seekForwardAmount = seekForwardAmount,
 		seekRewindAmount = seekRewindAmount,
-		onScrubbing = { scrubbing -> playbackManager.state.setScrubbing(scrubbing) },
+		onScrubbing = { scrubbing ->
+			playbackManager.state.setScrubbing(scrubbing)
+			onScrubbingChange?.invoke(scrubbing)
+		},
+		onScrubProgress = onScrubProgress,
 		onSeek = { progress -> playbackManager.state.seek(progress) },
 		modifier = modifier,
 		colors = colors,

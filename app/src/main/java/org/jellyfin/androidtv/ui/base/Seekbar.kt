@@ -72,6 +72,7 @@ fun Seekbar(
 	seekForwardAmount: Duration = duration / 100,
 	seekRewindAmount: Duration = duration / 100,
 	onScrubbing: ((scrubbing: Boolean) -> Unit)? = null,
+	onScrubProgress: ((progress: Duration) -> Unit)? = null,
 	onSeek: ((progress: Duration) -> Unit)? = null,
 	enabled: Boolean = true,
 	colors: SeekbarColors = SeekbarDefaults.colors(),
@@ -90,6 +91,7 @@ fun Seekbar(
 		seekForwardAmount = seekForwardPercentage,
 		seekRewindAmount = seekRewindPercentage,
 		onScrubbing = onScrubbing,
+		onScrubProgress = if (onScrubProgress == null) null else { progress -> onScrubProgress(progress.toDouble() * duration) },
 		onSeek = if (onSeek == null) null else { progress -> onSeek(progress.toDouble() * duration) },
 		enabled = enabled,
 		colors = colors,
@@ -105,6 +107,7 @@ fun Seekbar(
 	seekForwardAmount: Float = 0.01f,
 	seekRewindAmount: Float = 0.01f,
 	onScrubbing: ((scrubbing: Boolean) -> Unit)? = null,
+	onScrubProgress: ((progress: Float) -> Unit)? = null,
 	onSeek: ((progress: Float) -> Unit)? = null,
 	enabled: Boolean = true,
 	colors: SeekbarColors = SeekbarDefaults.colors(),
@@ -144,6 +147,7 @@ fun Seekbar(
 
 				if (visibleProgress != newProgress) {
 					progressOverride = newProgress
+					onScrubProgress?.invoke(newProgress)
 				}
 
 				if (isScrubbing && isKeyUp) {
@@ -207,3 +211,4 @@ fun Seekbar(
 			}
 	)
 }
+

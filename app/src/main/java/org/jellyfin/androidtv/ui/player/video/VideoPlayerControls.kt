@@ -3,21 +3,20 @@ package org.jellyfin.androidtv.ui.player.video
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusGroup
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -41,8 +40,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.unit.DpOffset
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -67,6 +66,7 @@ import org.jellyfin.playback.core.backend.AudioTrack
 import org.jellyfin.playback.core.backend.AudioTrackBackend
 import org.jellyfin.playback.core.backend.SubtitleTrackBackend
 import org.jellyfin.playback.core.model.PlayState
+import org.jellyfin.playback.core.model.PositionInfo
 import org.jellyfin.playback.core.queue.queue
 import org.jellyfin.playback.jellyfin.queue.baseItem
 import org.jellyfin.sdk.api.client.ApiClient
@@ -76,20 +76,21 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.DurationUnit
 
+private val CompactButtonPadding = PaddingValues(6.dp)
+
 /**
- * The control bar of the video player, laid out like the old player:
+ * The control bar of the video player: one row with every action and the progress bar below it.
  *
- * - first row: playback buttons and the rarely used track buttons,
- * - second row: the progress bar, which owns the focus while the user scrubs,
- * - third row: the episode controls, only for an episode that belongs to a series.
- *
- * A movie or a single video has no third row; pressing down on the progress bar cycles the focus
- * back to the first row instead of moving into an empty area.
+ * The row is read left to right: playback, the track pickers, the episode controls and the "more"
+ * button, then the current position and the duration at the far right. The progress bar spans the
+ * whole width underneath. Pressing down on the bar hides the bar, which matches the short jump to
+ * the picture the big TV players do.
  */
 @Composable
 fun VideoPlayerControls(
 	playbackManager: PlaybackManager = koinInject(),
 	onMoreOptionsClick: () -> Unit = {},
+	onHideControls: () -> Unit = {},
 ) {
 	val playState by playbackManager.state.playState.collectAsState()
 	val entry by playbackManager.queue.entry.collectAsState()
@@ -98,15 +99,35 @@ fun VideoPlayerControls(
 
 	val firstButtonFocus = remember { FocusRequester() }
 	val seekbarFocus = remember { FocusRequester() }
-	val firstEpisodeFocus = remember { FocusRequester() }
+	val positionInfo by rememberPlayerPositionInfo(playbackManager, precision = 1.seconds)
+
+	// The time the user is scrubbing to, shown enlarged above the bar until the seek is done.
+	var scrubPosition by remember { mutableStateOf<Duration?>(null) }
 
 	Column(
 		verticalArrangement = Arrangement.spacedBy(6.dp, Alignment.Bottom),
+		modifier = Modifier.fillMaxWidth(),
 	) {
+		// The time the user scrubs to replaces nothing and pushes nothing: it appears above the
+		// row while the bar is being dragged.
+		scrubPosition?.let { position ->
+			Row(
+				horizontalArrangement = Arrangement.Center,
+				modifier = Modifier.fillMaxWidth(),
+			) {
+				Text(
+					text = position.formatted(positionInfo.duration.inWholeMinutes >= 60),
+					fontSize = 34.sp,
+					style = LocalTextStyle.current.copy(color = Color.White),
+				)
+			}
+		}
+
 		Row(
 			horizontalArrangement = Arrangement.spacedBy(4.dp),
 			verticalAlignment = Alignment.CenterVertically,
 			modifier = Modifier
+				.fillMaxWidth()
 				.focusRestorer()
 				.focusGroup(),
 		) {
@@ -114,73 +135,66 @@ fun VideoPlayerControls(
 				playbackManager = playbackManager,
 				playState = playState,
 				modifier = Modifier
-				.size(44.dp)
-				.focusRequester(firstButtonFocus),
+					.size(44.dp)
+					.focusRequester(firstButtonFocus),
 			)
-			RewindButton(playbackManager, Modifier.size(44.dp))
-			FastForwardButton(playbackManager, Modifier.size(44.dp))
-
-			Spacer(Modifier.weight(1f))
 
 			AudioTrackButton(playbackManager, Modifier.size(44.dp))
 			SubtitleButton(playbackManager, Modifier.size(44.dp))
 
-			MoreSettingsButton(onClick = onMoreOptionsClick, modifier = Modifier.size(44.dp))
-		}
+			if (hasEpisodeControls) {
+				ControlBarSeparator()
+				EpisodeButtons(playbackManager)
+			}
 
-		// Times and bar on one line, the layout Plex and YouTube TV use: the elapsed time and the
-		// duration are plain small labels at the two ends of the bar, the bar takes the space
-		// between them. No background blocks, the labels stay secondary.
-		Row(
-			horizontalArrangement = Arrangement.spacedBy(10.dp),
-			verticalAlignment = Alignment.CenterVertically,
-			modifier = Modifier.fillMaxWidth(),
-		) {
-			PositionText(playbackManager, PositionTextType.CURRENT)
-
-			PlayerSeekbar(
-				playbackManager = playbackManager,
-				modifier = Modifier
-					.weight(1f)
-					.height(4.dp)
-					.focusRequester(seekbarFocus)
-					.focusProperties {
-						up = firstButtonFocus
-						// Without an episode row the focus cycles back to the buttons.
-						down = if (hasEpisodeControls) firstEpisodeFocus else firstButtonFocus
-					},
+			MoreSettingsButton(
+				onClick = onMoreOptionsClick,
+				modifier = Modifier.size(44.dp),
 			)
 
-			PositionText(playbackManager, PositionTextType.DURATION)
+			Spacer(Modifier.weight(1f))
+
+			TimeLabel(positionInfo)
 		}
 
-		if (hasEpisodeControls) {
-			EpisodeRow(
-				playbackManager = playbackManager,
-				firstButtonFocus = firstButtonFocus,
-				firstEpisodeFocus = firstEpisodeFocus,
-			)
-		}
+		PlayerSeekbar(
+			playbackManager = playbackManager,
+			modifier = Modifier
+				.fillMaxWidth()
+				.height(4.dp)
+				.focusRequester(seekbarFocus)
+				.focusProperties { up = firstButtonFocus }
+				.onPreviewKeyEvent { event ->
+					if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionDown) {
+						onHideControls()
+						true
+					} else {
+						false
+					}
+				},
+			onScrubProgress = { position -> scrubPosition = position },
+			onScrubbingChange = { scrubbing ->
+				playbackManager.state.setScrubbing(scrubbing)
+				if (!scrubbing) scrubPosition = null
+			},
+		)
 	}
 }
 
 /**
- * The episode controls below the progress bar: previous episode, next episode and the episode
- * picker. The buttons are icons only, the content description names them for screen readers.
+ * The episode controls: previous episode, next episode and the episode picker.
+ *
+ * The buttons live in the same row as the playback buttons (the row is the only layer above the
+ * progress bar) and are separated from them by a thin line so a press does not jump from pause to
+ * the previous episode.
  */
 @Composable
-private fun EpisodeRow(
-	playbackManager: PlaybackManager,
-	firstButtonFocus: FocusRequester,
-	firstEpisodeFocus: FocusRequester,
-) {
+private fun EpisodeButtons(playbackManager: PlaybackManager) {
 	val scope = rememberCoroutineScope()
 	val entry by playbackManager.queue.entry.collectAsState()
 	var canPrevious by remember { mutableStateOf(false) }
 	var canNext by remember { mutableStateOf(false) }
 
-	// Explicit colors: the episode row sits below the progress bar where the container theme is
-	// transparent, so the icons need a visible tint in every state.
 	val buttonColors = ButtonDefaults.colors(
 		containerColor = Color.Transparent,
 		contentColor = Color.White,
@@ -195,61 +209,68 @@ private fun EpisodeRow(
 		canNext = runCatching { playbackManager.queue.peekNext() }.getOrNull() != null
 	}
 
-	Row(
-		horizontalArrangement = Arrangement.spacedBy(4.dp),
-		verticalAlignment = Alignment.CenterVertically,
-		modifier = Modifier
-			.fillMaxWidth()
-			.height(44.dp)
-			.onPreviewKeyEvent { event ->
-				if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionDown) {
-					// Cycle back to the first row, the bar has no row below the episode controls.
-					firstButtonFocus.requestFocus()
-					true
-				} else {
-					false
-				}
-			},
+	IconButton(
+		onClick = { scope.launch { playbackManager.queue.previous() } },
+		enabled = canPrevious,
+		colors = buttonColors,
+		contentPadding = CompactButtonPadding,
+		modifier = Modifier.size(44.dp),
 	) {
-		IconButton(
-			onClick = { scope.launch { playbackManager.queue.previous() } },
-			contentPadding = CompactButtonPadding,
-			enabled = canPrevious,
-			colors = buttonColors,
-			// A disabled node can not own the focus, so the picker takes it on the first episode.
-			modifier = Modifier
-				.size(44.dp)
-				.let { if (canPrevious) it.focusRequester(firstEpisodeFocus) else it },
-		) {
-			Icon(
-				imageVector = ImageVector.vectorResource(R.drawable.ic_previous_episode),
-				contentDescription = stringResource(R.string.lbl_previous_episode),
-			)
-		}
-
-		IconButton(
-			onClick = { scope.launch { playbackManager.queue.next() } },
-			contentPadding = CompactButtonPadding,
-			enabled = canNext,
-			colors = buttonColors,
-			modifier = Modifier.size(44.dp),
-		) {
-			Icon(
-				imageVector = ImageVector.vectorResource(R.drawable.ic_next),
-				contentDescription = stringResource(R.string.lbl_next_episode),
-			)
-		}
-
-		// The picker stays in the left group right after the episode buttons: a control at the
-		// far right edge would move the eyes across the whole screen for one action.
-		SelectEpisodeButton(
-			playbackManager = playbackManager,
-			colors = buttonColors,
-			modifier = Modifier
-				.size(44.dp)
-				.let { if (canPrevious) it else it.focusRequester(firstEpisodeFocus) },
+		Icon(
+			imageVector = ImageVector.vectorResource(R.drawable.ic_previous_episode),
+			contentDescription = stringResource(R.string.lbl_previous_episode),
 		)
 	}
+
+	IconButton(
+		onClick = { scope.launch { playbackManager.queue.next() } },
+		enabled = canNext,
+		colors = buttonColors,
+		contentPadding = CompactButtonPadding,
+		modifier = Modifier.size(44.dp),
+	) {
+		Icon(
+			imageVector = ImageVector.vectorResource(R.drawable.ic_next),
+			contentDescription = stringResource(R.string.lbl_next_episode),
+		)
+	}
+
+	SelectEpisodeButton(
+		playbackManager = playbackManager,
+		colors = buttonColors,
+		modifier = Modifier.size(44.dp),
+	)
+}
+
+/**
+ * A thin line between the playback buttons and the episode buttons. It keeps the visual groups
+ * apart without adding another row.
+ */
+@Composable
+private fun ControlBarSeparator() = Box(
+	modifier = Modifier
+		.padding(horizontal = 8.dp)
+		.width(1.dp)
+		.height(24.dp)
+		.background(Color.White.copy(alpha = 0.25f)),
+)
+
+@Composable
+private fun TimeLabel(positionInfo: PositionInfo) {
+	if (positionInfo.duration == Duration.ZERO) return
+
+	val includeHours = positionInfo.duration.inWholeMinutes >= 60
+	val text = "${positionInfo.active.formatted(includeHours)} / ${positionInfo.duration.formatted(includeHours)}"
+
+	Text(
+		text = text,
+		fontSize = 13.sp,
+		style = LocalTextStyle.current.copy(
+			color = Color.White.copy(alpha = 0.85f),
+			// Tabular figures keep the label from jumping while the seconds change.
+			fontFeatureSettings = "tnum",
+		),
+	)
 }
 
 @Composable
@@ -333,43 +354,13 @@ private fun PlayPauseButton(
 }
 
 @Composable
-private fun RewindButton(
-	playbackManager: PlaybackManager,
-	modifier: Modifier = Modifier,
-) = IconButton(
-	onClick = { playbackManager.state.rewind() },
-		contentPadding = CompactButtonPadding,
-	modifier = modifier,
-) {
-	Icon(
-		imageVector = ImageVector.vectorResource(R.drawable.ic_rewind),
-		contentDescription = stringResource(R.string.rewind),
-	)
-}
-
-@Composable
-private fun FastForwardButton(
-	playbackManager: PlaybackManager,
-	modifier: Modifier = Modifier,
-) = IconButton(
-	onClick = { playbackManager.state.fastForward() },
-		contentPadding = CompactButtonPadding,
-	modifier = modifier,
-) {
-	Icon(
-		imageVector = ImageVector.vectorResource(R.drawable.ic_fast_forward),
-		contentDescription = stringResource(R.string.fast_forward),
-	)
-}
-
-@Composable
 private fun MoreSettingsButton(
 	onClick: () -> Unit,
 	modifier: Modifier = Modifier,
 ) = IconButton(
 	onClick = onClick,
-		contentPadding = CompactButtonPadding,
 	modifier = modifier,
+	contentPadding = CompactButtonPadding,
 ) {
 	Icon(
 		imageVector = ImageVector.vectorResource(R.drawable.ic_more),
@@ -385,43 +376,6 @@ private fun Duration.formatted(includeHours: Boolean): String {
 
 	return if (includeHours) "%02d:%02d:%02d".format(hours, minutes, seconds)
 	else "%02d:%02d".format(minutes, seconds)
-}
-
-private val CompactButtonPadding = PaddingValues(6.dp)
-
-private enum class PositionTextType {
-	/** The position that is playing right now. */
-	CURRENT,
-
-	/** The duration of the item. */
-	DURATION,
-}
-
-@Composable
-private fun PositionText(
-	playbackManager: PlaybackManager,
-	type: PositionTextType,
-) {
-	val positionInfo by rememberPlayerPositionInfo(playbackManager, precision = 1.seconds)
-	if (positionInfo.duration == Duration.ZERO) return
-
-	val text by remember {
-		derivedStateOf {
-			val includeHours = positionInfo.duration.inWholeMinutes >= 60
-			when (type) {
-				PositionTextType.CURRENT -> positionInfo.active.formatted(includeHours)
-				PositionTextType.DURATION -> positionInfo.duration.formatted(includeHours)
-			}
-		}
-	}
-
-	// Secondary information: small, slightly dimmed, no background. The focused bar is the
-	// emphasis, the labels only give the numbers.
-	Text(
-		text = text,
-		fontSize = 12.sp,
-		style = LocalTextStyle.current.copy(color = Color.White.copy(alpha = 0.72f)),
-	)
 }
 
 @Composable
@@ -508,11 +462,3 @@ private fun AudioTrackButton(playbackManager: PlaybackManager, modifier: Modifie
 		}
 	}
 }
-
-
-
-
-
-
-
-

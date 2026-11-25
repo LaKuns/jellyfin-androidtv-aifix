@@ -137,6 +137,9 @@ fun VideoPlayerOverlay(
 					onMoreOptionsClick = {
 						showSettings = true
 					},
+					onHideControls = {
+						visibilityState.hide()
+					},
 				)
 			},
 		)

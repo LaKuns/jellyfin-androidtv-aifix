@@ -82,7 +82,7 @@ fun PlayerOverlayLayout(
 			Box(
 				modifier = Modifier
 					.fillMaxWidth()
-					.fillMaxHeight(3f / 10)
+					.fillMaxHeight(1f / 4)
 					.background(
 						brush = Brush.verticalGradient(
 							colors = listOf(
@@ -118,7 +118,7 @@ fun PlayerOverlayLayout(
 				contentAlignment = Alignment.BottomCenter,
 				modifier = Modifier
 					.fillMaxWidth()
-					.fillMaxHeight(3f / 10)
+					.fillMaxHeight(1f / 4)
 					.background(
 						brush = Brush.verticalGradient(
 							colors = listOf(
@@ -217,5 +217,6 @@ fun rememberPlayerOverlayVisibility(
 		hide = ::hide,
 	)
 }
+
 
 
