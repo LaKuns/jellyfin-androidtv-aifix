@@ -185,6 +185,18 @@ class UserPreferences(context: Context) : SharedPreferenceStore(
 		var audioBoost = enumPreference("audio_boost_level", AudioBoost.OFF)
 
 		/**
+		 * Whether the new player may hand a compressed audio track to the audio HAL as a
+		 * bitstream ("offload") instead of decoding it itself.
+		 *
+		 * The HAL of the TV box this fork is built for announces AC3/EAC3/DTS/TrueHD and then
+		 * reports a wrong position for that direct path: it counts compressed bytes as sample
+		 * frames, so the audio clock runs at "bitrate / 384000" of the real speed and the sound
+		 * tears away from the picture. Decoding is the known good path and therefore the default;
+		 * the bitstream path stays available as an explicit experiment.
+		 */
+		var audioOffload = booleanPreference("audio_offload_enabled", defaultValue = false)
+
+		/**
 		 * AC3 bitstream device profile override.
 		 */
 		var bitstreamAc3 = enumPreference("bitstream_ac3_mode", BitstreamAudioMode.AUTO)

@@ -108,6 +108,9 @@ fun Scope.createPlaybackManager() = playbackManager(androidContext()) {
 		preferFfmpeg = userPreferences[UserPreferences.preferExoPlayerFfmpeg],
 		enableLibass = userPreferences[UserPreferences.assDirectPlay],
 		enableDebugLogging = userPreferences[UserPreferences.debuggingEnabled],
+		// The direct audio path of this device's HAL reports the wrong position, so the
+		// player decodes compressed audio instead of handing it to the HAL as a bitstream.
+		audioOffload = userPreferences[UserPreferences.audioOffload],
 		// Keep the decoder fallback enabled: it is the only way some TV chips can play
 		// streams their hardware decoder rejects (e.g. multichannel AAC). Disabling it
 		// turns a playable stream into a hard playback error.
