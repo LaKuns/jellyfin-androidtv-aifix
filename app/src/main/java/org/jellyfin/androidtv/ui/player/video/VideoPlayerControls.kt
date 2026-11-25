@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -49,6 +50,8 @@ import org.jellyfin.androidtv.preference.UserPreferences
 import org.jellyfin.androidtv.ui.base.Icon
 import org.jellyfin.androidtv.ui.base.LocalTextStyle
 import org.jellyfin.androidtv.ui.base.Text
+import org.jellyfin.androidtv.ui.base.button.ButtonColors
+import org.jellyfin.androidtv.ui.base.button.ButtonDefaults
 import org.jellyfin.androidtv.ui.base.button.IconButton
 import org.jellyfin.androidtv.ui.base.popover.Popover
 import org.jellyfin.androidtv.ui.base.popover.PopoverMenu
@@ -122,30 +125,30 @@ fun VideoPlayerControls(
 			MoreSettingsButton(onClick = onMoreOptionsClick)
 		}
 
-		// Current position, bar, duration: the two times sit at the ends of the bar so the
-		// viewer reads both where the bar is, without a separate label line.
+		// Times sit above the ends of the bar, the way Netflix, Plex and YouTube TV do it: small,
+		// dimmed labels that do not compete with the picture, no background blocks.
 		Row(
 			horizontalArrangement = Arrangement.spacedBy(12.dp),
 			verticalAlignment = Alignment.CenterVertically,
 			modifier = Modifier.fillMaxWidth(),
 		) {
 			PositionText(playbackManager, PositionTextType.CURRENT)
-
-			PlayerSeekbar(
-				playbackManager = playbackManager,
-				modifier = Modifier
-					.weight(1f)
-					.height(8.dp)
-					.focusRequester(seekbarFocus)
-					.focusProperties {
-						up = firstButtonFocus
-						// Without an episode row the focus cycles back to the buttons.
-						down = if (hasEpisodeControls) firstEpisodeFocus else firstButtonFocus
-					},
-			)
-
+			Spacer(Modifier.weight(1f))
 			PositionText(playbackManager, PositionTextType.DURATION)
 		}
+
+		PlayerSeekbar(
+			playbackManager = playbackManager,
+			modifier = Modifier
+				.fillMaxWidth()
+				.height(6.dp)
+				.focusRequester(seekbarFocus)
+				.focusProperties {
+					up = firstButtonFocus
+					// Without an episode row the focus cycles back to the buttons.
+					down = if (hasEpisodeControls) firstEpisodeFocus else firstButtonFocus
+				},
+		)
 
 		if (hasEpisodeControls) {
 			EpisodeRow(
@@ -172,6 +175,17 @@ private fun EpisodeRow(
 	var canPrevious by remember { mutableStateOf(false) }
 	var canNext by remember { mutableStateOf(false) }
 
+	// Explicit colors: the episode row sits below the progress bar where the container theme is
+	// transparent, so the icons need a visible tint in every state.
+	val buttonColors = ButtonDefaults.colors(
+		containerColor = Color.Transparent,
+		contentColor = Color.White,
+		focusedContainerColor = Color.White,
+		focusedContentColor = Color.Black,
+		disabledContainerColor = Color.Transparent,
+		disabledContentColor = Color.White.copy(alpha = 0.35f),
+	)
+
 	LaunchedEffect(entry) {
 		canPrevious = runCatching { playbackManager.queue.peekPrevious() }.getOrNull() != null
 		canNext = runCatching { playbackManager.queue.peekNext() }.getOrNull() != null
@@ -182,6 +196,7 @@ private fun EpisodeRow(
 		verticalAlignment = Alignment.CenterVertically,
 		modifier = Modifier
 			.fillMaxWidth()
+			.height(56.dp)
 			.onPreviewKeyEvent { event ->
 				if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionDown) {
 					// Cycle back to the first row, the bar has no row below the episode controls.
@@ -195,8 +210,11 @@ private fun EpisodeRow(
 		IconButton(
 			onClick = { scope.launch { playbackManager.queue.previous() } },
 			enabled = canPrevious,
+			colors = buttonColors,
 			// A disabled node can not own the focus, so the picker takes it on the first episode.
-			modifier = if (canPrevious) Modifier.focusRequester(firstEpisodeFocus) else Modifier,
+			modifier = Modifier
+				.size(48.dp)
+				.let { if (canPrevious) it.focusRequester(firstEpisodeFocus) else it },
 		) {
 			Icon(
 				imageVector = ImageVector.vectorResource(R.drawable.ic_previous_episode),
@@ -207,6 +225,8 @@ private fun EpisodeRow(
 		IconButton(
 			onClick = { scope.launch { playbackManager.queue.next() } },
 			enabled = canNext,
+			colors = buttonColors,
+			modifier = Modifier.size(48.dp),
 		) {
 			Icon(
 				imageVector = ImageVector.vectorResource(R.drawable.ic_next),
@@ -218,7 +238,10 @@ private fun EpisodeRow(
 		// far right edge would move the eyes across the whole screen for one action.
 		SelectEpisodeButton(
 			playbackManager = playbackManager,
-			modifier = if (canPrevious) Modifier else Modifier.focusRequester(firstEpisodeFocus),
+			colors = buttonColors,
+			modifier = Modifier
+				.size(48.dp)
+				.let { if (canPrevious) it else it.focusRequester(firstEpisodeFocus) },
 		)
 	}
 }
@@ -227,6 +250,7 @@ private fun EpisodeRow(
 private fun SelectEpisodeButton(
 	playbackManager: PlaybackManager,
 	modifier: Modifier = Modifier,
+	colors: ButtonColors = ButtonDefaults.colors(),
 ) {
 	val entry by playbackManager.queue.entry.collectAsState()
 	val current = entry?.baseItem?.takeIf { it.type == BaseItemKind.EPISODE && it.seriesId != null } ?: return
@@ -371,19 +395,13 @@ private fun PositionText(
 		}
 	}
 
-	// A slight scrim keeps the time readable over a bright scene, the gradient alone is not
-	// enough when the picture is white at the bottom.
-	Box(
-		modifier = Modifier
-			.background(Color.Black.copy(alpha = 0.45f), RoundedCornerShape(4.dp))
-			.padding(horizontal = 8.dp, vertical = 2.dp),
-	) {
-		Text(
-			text = text,
-			fontSize = 14.sp,
-			style = LocalTextStyle.current.copy(color = Color.White.copy(alpha = 0.92f)),
-		)
-	}
+	// Secondary information: small, slightly dimmed, no background. The focused bar is the
+	// emphasis, the labels only give the numbers.
+	Text(
+		text = text,
+		fontSize = 13.sp,
+		style = LocalTextStyle.current.copy(color = Color.White.copy(alpha = 0.72f)),
+	)
 }
 
 @Composable
