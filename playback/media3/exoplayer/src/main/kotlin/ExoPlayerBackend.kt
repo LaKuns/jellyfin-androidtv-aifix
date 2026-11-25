@@ -590,11 +590,11 @@ class ExoPlayerBackend(
 			.filter { group -> group.type == C.TRACK_TYPE_AUDIO }
 			.flatMap { group ->
 				(0 until group.length).map { index ->
-					val format = group.getFormat(index)
+					val format = group.getTrackFormat(index)
 					AudioTrackCandidate(
 						id = audioTrackId(group.mediaTrackGroup, index),
 						language = format.language,
-						isDefault = format.selectionFlags and C.SELECTION_FLAG_DEFAULT != 0,
+						isDefault = (format.selectionFlags and C.SELECTION_FLAG_DEFAULT) != 0,
 						isSupported = group.isSupported,
 					)
 				}
