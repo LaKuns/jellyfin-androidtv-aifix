@@ -36,6 +36,8 @@ import io.github.peerless2012.ass.media.kt.withAssMkvSupport
 import io.github.peerless2012.ass.media.parser.AssSubtitleParserFactory
 import io.github.peerless2012.ass.media.type.AssRenderType
 import io.github.peerless2012.ass.media.widget.AssSubtitleView
+import org.jellyfin.playback.core.audio.AudioTrackCandidate
+import org.jellyfin.playback.core.audio.AudioTrackSelector
 import org.jellyfin.playback.core.backend.AudioTrack
 import org.jellyfin.playback.core.backend.AudioTrackBackend
 import org.jellyfin.playback.core.backend.BasePlayerBackend
@@ -93,6 +95,13 @@ class ExoPlayerBackend(
 	 * the item arrive, and forgotten when the item changes.
 	 */
 	private var selectedAudioTrackId: String? = null
+
+	/**
+	 * Language of the audio track the user picked on an earlier item, or null while the user has
+	 * never picked one. The next item starts with the same language, which is what the old player
+	 * did: a library of Chinese films does not fall back to an English track on every new film.
+	 */
+	private var lastAudioLanguage: String? = null
 
 	/**
 	 * Whether the subtitles of the current item are turned on. They are on by default: a
@@ -300,6 +309,7 @@ class ExoPlayerBackend(
 			currentTracks = tracks
 			applySubtitleSelection(tracks)
 			applyAudioSelection(tracks)
+			applyPreferredAudioLanguage(tracks)
 		}
 
 		override fun onRenderedFirstFrame() {
@@ -514,6 +524,8 @@ class ExoPlayerBackend(
 		}
 
 		selectedAudioTrackId = id
+		// Remember the language, not the track: the next item is another file.
+		lastAudioLanguage = group.getFormat(index).language
 		applyAudioSelection(tracks)
 		Timber.i("Audio track selected: %s", audioTrackLabel(group.getFormat(index), index))
 	}
@@ -546,6 +558,47 @@ class ExoPlayerBackend(
 			.setOverrideForType(TrackSelectionOverride(group, index))
 			.build()
 	}
+
+	/**
+	 * Applies the language of the track the user picked on an earlier item.
+	 *
+	 * Without this the media3 selector decides, and a file whose default track is a format the
+	 * box can not play starts silent. The chain is the one of the old player, see
+	 * [AudioTrackSelector].
+	 */
+	private fun applyPreferredAudioLanguage(tracks: Tracks) {
+		// A pick of the user for this item always wins.
+		if (selectedAudioTrackId != null) return
+		val language = lastAudioLanguage ?: return
+
+		val chosen = AudioTrackSelector.choose(
+			candidates = audioTrackCandidates(tracks),
+			preferredLanguage = language,
+			deviceLanguage = Locale.getDefault().language,
+		) ?: return
+
+		val (group, index) = findAudioTrack(tracks, chosen.id) ?: return
+		exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters.buildUpon()
+			.setOverrideForType(TrackSelectionOverride(group, index))
+			.build()
+		Timber.i("Preferred audio track: %s", audioTrackLabel(group.getFormat(index), index))
+	}
+
+	/** All audio tracks of the loaded media, in file order, for the default selection. */
+	private fun audioTrackCandidates(tracks: Tracks): List<AudioTrackCandidate> =
+		tracks.groups
+			.filter { group -> group.type == C.TRACK_TYPE_AUDIO }
+			.flatMap { group ->
+				(0 until group.length).map { index ->
+					val format = group.getFormat(index)
+					AudioTrackCandidate(
+						id = audioTrackId(group.mediaTrackGroup, index),
+						language = format.language,
+						isDefault = format.selectionFlags and C.SELECTION_FLAG_DEFAULT != 0,
+						isSupported = group.isSupported,
+					)
+				}
+			}
 
 	private fun findAudioTrack(tracks: Tracks, id: String): Pair<TrackGroup, Int>? =
 		tracks.groups
