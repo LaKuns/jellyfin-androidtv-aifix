@@ -134,25 +134,11 @@ fun VideoPlayerControls(
 	// The time the user is scrubbing to, shown enlarged above the bar until the seek is done.
 	var scrubPosition by remember { mutableStateOf<Duration?>(null) }
 
-	Column(
-		verticalArrangement = Arrangement.spacedBy(6.dp, Alignment.Bottom),
-		modifier = Modifier.fillMaxWidth(),
-	) {
-		// The time the user scrubs to replaces nothing and pushes nothing: it appears above the
-		// row while the bar is being dragged.
-		scrubPosition?.let { position ->
-			Row(
-				horizontalArrangement = Arrangement.Center,
-				modifier = Modifier.fillMaxWidth(),
-			) {
-				Text(
-					text = position.formatted(positionInfo.duration.inWholeMinutes >= 60),
-					fontSize = 34.sp,
-					style = LocalTextStyle.current.copy(color = Color.White),
-				)
-			}
-		}
-
+	Box(modifier = Modifier.fillMaxWidth()) {
+		Column(
+			verticalArrangement = Arrangement.spacedBy(6.dp, Alignment.Bottom),
+			modifier = Modifier.fillMaxWidth(),
+		) {
 		Row(
 			horizontalArrangement = Arrangement.spacedBy(4.dp),
 			verticalAlignment = Alignment.CenterVertically,
@@ -191,7 +177,8 @@ fun VideoPlayerControls(
 			playbackManager = playbackManager,
 			modifier = Modifier
 				.fillMaxWidth()
-				.height(4.dp)
+				// A 3dp bar gives a 12dp knob in the seekbar component, the size the TV players use.
+				.height(3.dp)
 				.focusRequester(seekbarFocus)
 				.focusProperties { up = firstButtonFocus }
 				.onPreviewKeyEvent { event ->
@@ -208,6 +195,20 @@ fun VideoPlayerControls(
 				if (!scrubbing) scrubPosition = null
 			},
 		)
+		}
+
+		// The time the user scrubs to is drawn above the row instead of inside it, so the rows
+		// do not jump up and down while the bar is being dragged.
+		scrubPosition?.let { position ->
+			Text(
+				text = position.formatted(positionInfo.duration.inWholeMinutes >= 60),
+				fontSize = 34.sp,
+				style = LocalTextStyle.current.copy(color = Color.White),
+				modifier = Modifier
+					.align(Alignment.BottomCenter)
+					.padding(bottom = 64.dp),
+			)
+		}
 	}
 }
 
