@@ -170,9 +170,10 @@ fun VideoPlayerOverlay(
 /**
  * Seeks the running item and returns the line that is shown to the viewer.
  *
- * A held key accelerates the seek: the repeat counter grows while the key is down, so the step
- * grows from the configured amount to three and finally six times that amount. Without the
- * acceleration a two minute skip would take twelve presses on a ten second step.
+ * A held key accelerates the seek, see [seekAcceleration]: the repeat counter grows while the
+ * key is down, so the step grows from the configured amount to three and finally six times that
+ * amount. Without the acceleration a two minute skip would take twelve presses on a ten second
+ * step.
  */
 private fun seek(playbackManager: PlaybackManager, forward: Boolean, repeatCount: Int): String {
 	val baseAmount = if (forward) {
@@ -180,13 +181,7 @@ private fun seek(playbackManager: PlaybackManager, forward: Boolean, repeatCount
 	} else {
 		playbackManager.options.defaultRewindAmount()
 	}
-	val multiplier = when {
-		repeatCount < 4 -> 1
-		repeatCount < 9 -> 3
-		else -> 6
-	}
-	// One press never skips more than a minute, even when the configure step is larger.
-	val amount = (baseAmount * multiplier).coerceAtMost(maxOf(60.seconds, baseAmount))
+	val amount = seekAcceleration(baseAmount, repeatCount)
 
 	val positionInfo = playbackManager.state.positionInfo
 	val current = positionInfo.active
