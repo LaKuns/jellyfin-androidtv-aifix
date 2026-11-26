@@ -87,6 +87,33 @@ class EpisodeCatalog(private val api: ApiClient, lowResource: Boolean = false) {
         }
     }
 
+    /**
+     * The episode and its siblings in the same season, in the order the server lists them.
+     *
+     * The player builds its queue from this list so the previous episode can be played too, not
+     * only the following ones. Falls back to the given episode when the season can not be loaded.
+     */
+    suspend fun seasonItems(episode: BaseItemDto): List<BaseItemDto> = withContext(Dispatchers.IO) {
+        val seriesId = episode.seriesId
+        val seasonId = episode.seasonId
+        if (seriesId == null || seasonId == null) return@withContext listOf(episode)
+        try {
+            val response = api.tvShowsApi.getEpisodes(
+                seriesId = seriesId,
+                seasonId = seasonId,
+                isMissing = false,
+                limit = PLAYBACK_QUEUE_LIMIT,
+                fields = ItemRepository.itemFields,
+            ).content.items
+            response.takeIf { it.isNotEmpty() } ?: listOf(episode)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            Timber.w(error, "Could not load the season for the episode queue; playing the episode only")
+            listOf(episode)
+        }
+    }
+
     companion object {
         private const val LOW_RESOURCE_PAGE_SIZE = 24
         private const val DEFAULT_PAGE_SIZE = 48

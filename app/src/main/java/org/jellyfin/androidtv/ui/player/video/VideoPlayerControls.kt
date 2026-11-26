@@ -288,10 +288,18 @@ private fun SelectEpisodeButton(
 	IconButton(
 		onClick = {
 			EpisodePickerDialog.show(context, owner, api, current) { episode ->
-				val items = EpisodeCatalog(api).playbackItems(episode, preferences[UserPreferences.mediaQueuingEnabled])
+				// Use the whole season so the previous episode is available after the switch as well.
+				val queuingEnabled = preferences[UserPreferences.mediaQueuingEnabled]
+				val items = if (queuingEnabled) {
+					EpisodeCatalog(api).seasonItems(episode)
+				} else {
+					listOf(episode)
+				}
+				val startIndex = items.indexOfFirst { it.id == episode.id }.coerceAtLeast(0)
 				playbackManager.state.pause()
 				playbackManager.queue.clear()
 				playbackManager.queue.addSupplier(RewriteMediaManager.BaseItemQueueSupplier(api, items, false))
+				if (startIndex > 0) playbackManager.queue.setIndex(startIndex)
 				playbackManager.state.play()
 				true
 			}
