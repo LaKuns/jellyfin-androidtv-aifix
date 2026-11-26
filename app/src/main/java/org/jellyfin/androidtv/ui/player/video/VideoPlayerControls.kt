@@ -230,7 +230,7 @@ private fun EpisodeButtons(playbackManager: PlaybackManager) {
 		modifier = Modifier.size(44.dp),
 	) {
 		Icon(
-			imageVector = ImageVector.vectorResource(R.drawable.ic_next),
+			imageVector = ImageVector.vectorResource(R.drawable.ic_next_episode),
 			contentDescription = stringResource(R.string.lbl_next_episode),
 		)
 	}
