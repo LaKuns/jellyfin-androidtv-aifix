@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -77,6 +78,35 @@ import kotlin.time.Duration.Companion.seconds
 import kotlin.time.DurationUnit
 
 private val CompactButtonPadding = PaddingValues(6.dp)
+
+/**
+ * An icon button of the control bar.
+ *
+ * The target of the button is bigger than the icon (44dp, the size a remote needs), and the base
+ * button lays its content out from the top left corner. Centering the content here keeps the icon
+ * in the middle of the focus circle instead of slightly off to the top left.
+ */
+@Composable
+private fun PlayerIconButton(
+	onClick: () -> Unit,
+	modifier: Modifier = Modifier,
+	enabled: Boolean = true,
+	colors: ButtonColors = ButtonDefaults.colors(),
+	content: @Composable () -> Unit,
+) = IconButton(
+	onClick = onClick,
+	modifier = modifier,
+	enabled = enabled,
+	colors = colors,
+	contentPadding = CompactButtonPadding,
+) {
+	Box(
+		modifier = Modifier.fillMaxSize(),
+		contentAlignment = Alignment.Center,
+	) {
+		content()
+	}
+}
 
 /**
  * The control bar of the video player: one row with every action and the progress bar below it.
@@ -209,11 +239,10 @@ private fun EpisodeButtons(playbackManager: PlaybackManager) {
 		canNext = runCatching { playbackManager.queue.peekNext() }.getOrNull() != null
 	}
 
-	IconButton(
+	PlayerIconButton(
 		onClick = { scope.launch { playbackManager.queue.previous() } },
 		enabled = canPrevious,
 		colors = buttonColors,
-		contentPadding = CompactButtonPadding,
 		modifier = Modifier.size(44.dp),
 	) {
 		Icon(
@@ -222,11 +251,10 @@ private fun EpisodeButtons(playbackManager: PlaybackManager) {
 		)
 	}
 
-	IconButton(
+	PlayerIconButton(
 		onClick = { scope.launch { playbackManager.queue.next() } },
 		enabled = canNext,
 		colors = buttonColors,
-		contentPadding = CompactButtonPadding,
 		modifier = Modifier.size(44.dp),
 	) {
 		Icon(
@@ -285,7 +313,7 @@ private fun SelectEpisodeButton(
 	val owner = LocalLifecycleOwner.current
 	val api = koinInject<ApiClient>()
 	val preferences = koinInject<UserPreferences>()
-	IconButton(
+	PlayerIconButton(
 		onClick = {
 			EpisodePickerDialog.show(context, owner, api, current) { episode ->
 				// Use the whole season so the previous episode is available after the switch as well.
@@ -306,7 +334,6 @@ private fun SelectEpisodeButton(
 		},
 		modifier = modifier,
 		colors = colors,
-		contentPadding = CompactButtonPadding,
 	) {
 		Icon(
 			imageVector = ImageVector.vectorResource(R.drawable.ic_select_chapter),
@@ -322,7 +349,7 @@ private fun PlayPauseButton(
 	modifier: Modifier = Modifier,
 ) {
 	val focusRequester = remember { FocusRequester() }
-	IconButton(
+	PlayerIconButton(
 		onClick = {
 			when (playState) {
 				PlayState.STOPPED,
@@ -337,7 +364,6 @@ private fun PlayPauseButton(
 			.onVisibilityChanged {
 				focusRequester.requestFocus()
 			},
-		contentPadding = CompactButtonPadding,
 	) {
 		AnimatedContent(playState) { playState ->
 			when (playState) {
@@ -365,10 +391,9 @@ private fun PlayPauseButton(
 private fun MoreSettingsButton(
 	onClick: () -> Unit,
 	modifier: Modifier = Modifier,
-) = IconButton(
+) = PlayerIconButton(
 	onClick = onClick,
 	modifier = modifier,
-	contentPadding = CompactButtonPadding,
 ) {
 	Icon(
 		imageVector = ImageVector.vectorResource(R.drawable.ic_more),
@@ -391,13 +416,12 @@ private fun SubtitleButton(playbackManager: PlaybackManager, modifier: Modifier 
 	val backend = playbackManager.backend as? SubtitleTrackBackend ?: return
 	var enabled by remember { mutableStateOf(backend.isSubtitlesEnabled()) }
 
-	IconButton(
+	PlayerIconButton(
 		onClick = {
 			enabled = !enabled
 			backend.setSubtitlesEnabled(enabled)
 		},
 		modifier = modifier,
-		contentPadding = CompactButtonPadding,
 	) {
 		Icon(
 			imageVector = ImageVector.vectorResource(R.drawable.ic_subtitles),
@@ -433,13 +457,12 @@ private fun AudioTrackButton(playbackManager: PlaybackManager, modifier: Modifie
 	if (tracks.size < 2) return
 
 	Box {
-		IconButton(
+		PlayerIconButton(
 			onClick = {
 				tracks = backend.getAudioTracks()
 				expanded = true
 			},
 			modifier = modifier,
-			contentPadding = CompactButtonPadding,
 		) {
 			Icon(
 				imageVector = ImageVector.vectorResource(R.drawable.ic_audiotrack),
@@ -470,3 +493,6 @@ private fun AudioTrackButton(playbackManager: PlaybackManager, modifier: Modifie
 		}
 	}
 }
+
+
+
