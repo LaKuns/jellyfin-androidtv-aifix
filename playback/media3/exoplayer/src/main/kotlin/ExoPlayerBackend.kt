@@ -9,6 +9,7 @@ import androidx.core.content.getSystemService
 import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
@@ -41,6 +42,7 @@ import org.jellyfin.playback.core.audio.AudioTrackSelector
 import org.jellyfin.playback.core.backend.AudioTrack
 import org.jellyfin.playback.core.backend.AudioTrackBackend
 import org.jellyfin.playback.core.backend.BasePlayerBackend
+import org.jellyfin.playback.core.backend.SubtitleTrack
 import org.jellyfin.playback.core.backend.SubtitleTrackBackend
 import org.jellyfin.playback.core.mediastream.MediaStream
 import org.jellyfin.playback.core.mediastream.PlayableMediaStream
@@ -102,6 +104,19 @@ class ExoPlayerBackend(
 	 * did: a library of Chinese films does not fall back to an English track on every new film.
 	 */
 	private var lastAudioLanguage: String? = null
+
+	/**
+	 * The subtitle track the user picked for the current item, or null while the user has not
+	 * picked one and the player decides. Forgotten when the item changes, the same way the
+	 * audio pick is forgotten.
+	 */
+	private var selectedSubtitleTrackId: String? = null
+
+	/**
+	 * Language of the subtitle track the user picked on an earlier item. The next item prefers
+	 * the same language, like the audio pick does; the device language is the fallback.
+	 */
+	private var lastSubtitleLanguage: String? = null
 
 	/**
 	 * Whether the subtitles of the current item are turned on. They are on by default: a
@@ -302,6 +317,7 @@ class ExoPlayerBackend(
 			// applied when they arrive.
 			currentTracks = null
 			selectedAudioTrackId = null
+			selectedSubtitleTrackId = null
 			loggedCues = false
 		}
 
@@ -490,6 +506,47 @@ class ExoPlayerBackend(
 		currentTracks?.let(::applySubtitleSelection)
 	}
 
+	override fun getSubtitleTracks(): List<SubtitleTrack> {
+		val tracks = currentTracks ?: readCurrentTracks() ?: return emptyList()
+
+		val subtitleTracks = tracks.groups
+			.filter { group -> group.type == C.TRACK_TYPE_TEXT }
+			.flatMap { group ->
+				(0 until group.length)
+					.filter(group::isTrackSupported)
+					.map { index ->
+						val format = group.mediaTrackGroup.getFormat(index)
+						SubtitleTrack(
+							id = subtitleTrackId(group.mediaTrackGroup, index),
+							label = subtitleTrackLabel(format, index),
+							language = format.language,
+							isSelected = group.isTrackSelected(index),
+						)
+					}
+			}
+		Timber.i("Subtitle tracks: %d (%s)", subtitleTracks.size, subtitleTracks.joinToString { it.label })
+		return subtitleTracks
+	}
+
+	override fun setSubtitleTrack(id: String) {
+		val tracks = currentTracks ?: readCurrentTracks() ?: return
+		val (group, index) = findSubtitleTrack(tracks, id) ?: run {
+			Timber.w("Subtitle track %s does not exist in the current item", id)
+			return
+		}
+
+		val format = group.getFormat(index)
+		selectedSubtitleTrackId = id
+		lastSubtitleLanguage = format.language
+		subtitlesEnabled = true
+		exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters.buildUpon()
+			.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+			.setOverrideForType(TrackSelectionOverride(group, index))
+			.build()
+		loggedCues = false
+		Timber.i("Subtitle track selected: %s", subtitleTrackLabel(format, index))
+	}
+
 	override fun getAudioTracks(): List<AudioTrack> {
 		val tracks = currentTracks ?: readCurrentTracks() ?: return emptyList()
 
@@ -615,7 +672,7 @@ class ExoPlayerBackend(
 
 	/**
 	 * Builds the label of an audio track the way the user reads it: language, codec and
-	 * channel layout, for example "English · E-AC3 · 5.1". Only the parts that are known
+	 * channel layout, for example "English 路 E-AC3 路 5.1". Only the parts that are known
 	 * are shown, and a track without any information falls back to its number.
 	 */
 	private fun audioTrackLabel(format: Format, index: Int): String {
@@ -655,7 +712,7 @@ class ExoPlayerBackend(
 		}
 		channels?.let(parts::add)
 
-		return parts.takeIf { it.isNotEmpty() }?.joinToString(" · ") ?: "Track ${index + 1}"
+		return parts.takeIf { it.isNotEmpty() }?.joinToString(" 路 ") ?: "Track ${index + 1}"
 	}
 
 	/**
@@ -675,7 +732,9 @@ class ExoPlayerBackend(
 					(0 until group.length).any(group::isTrackSupported)
 			}
 
-			val chosen = chooseTextTrack(textGroups)
+			// The pick of the user for this item always wins over the automatic choice.
+			val chosen = selectedSubtitleTrackId?.let { id -> findSubtitleTrack(tracks, id) }
+				?: chooseTextTrack(textGroups)
 			Timber.i("Subtitle selection: %d text groups, chosen %s", textGroups.size, chosen?.second ?: "none")
 			chosen?.let { (group, index) ->
 				builder.setOverrideForType(TrackSelectionOverride(group, index))
@@ -693,6 +752,52 @@ class ExoPlayerBackend(
 	 * Chinese prefers the track that is labelled as simplified Chinese: films often carry
 	 * both variants, and the wrong one is worse than none.
 	 */
+	private fun findSubtitleTrack(tracks: Tracks, id: String): Pair<TrackGroup, Int>? =
+		tracks.groups
+			.filter { group -> group.type == C.TRACK_TYPE_TEXT }
+			.flatMap { group -> (0 until group.length).map { index -> group.mediaTrackGroup to index } }
+			.firstOrNull { (group, index) -> subtitleTrackId(group, index) == id }
+
+	/** Identifies a subtitle track inside the loaded media, see [audioTrackId]. */
+	private fun subtitleTrackId(group: TrackGroup, index: Int): String = "${group.id}#$index"
+
+	/**
+	 * Builds the label of a subtitle track: language and format, for example
+	 * "简体中文 · SSA/ASS". Only the parts that are known are shown.
+	 */
+	private fun subtitleTrackLabel(format: Format, index: Int): String {
+		val parts = ArrayList<String>(2)
+
+		format.label?.takeIf { label -> label.isNotBlank() }?.let(parts::add)
+
+		format.language?.let { language ->
+			val name = Locale(language).getDisplayLanguage(Locale.getDefault())
+			if (name.isNotBlank()) parts.add(name)
+		}
+
+		val formatName = when (format.sampleMimeType?.lowercase(Locale.ROOT)) {
+			MimeTypes.TEXT_SSA -> "SSA/ASS"
+			MimeTypes.APPLICATION_SUBRIP -> "SRT"
+			MimeTypes.TEXT_VTT -> "VTT"
+			MimeTypes.APPLICATION_PGS -> "PGS"
+			MimeTypes.APPLICATION_VOBSUB -> "VobSub"
+			MimeTypes.APPLICATION_TTML -> "TTML"
+			else -> null
+		}
+		formatName?.let(parts::add)
+
+		return parts.distinct().joinToString(" · ").ifBlank { "字幕 ${index + 1}" }
+	}
+
+	/**
+	 * Picks the text track that is shown.
+	 *
+	 * The language of the track the user picked on an earlier item wins. After that the
+	 * language of the device is preferred; a track without a language is taken next, and the
+	 * first track that the device can render is the last choice. A device that is set to
+	 * Chinese prefers the track that is labelled as simplified Chinese: films often carry
+	 * both variants, and the wrong one is worse than none.
+	 */
 	private fun chooseTextTrack(groups: List<Tracks.Group>): Pair<TrackGroup, Int>? {
 		val candidates = groups.flatMap { group ->
 			(0 until group.length)
@@ -701,10 +806,16 @@ class ExoPlayerBackend(
 		}
 		if (candidates.isEmpty()) return null
 
+		lastSubtitleLanguage?.let { preferredLanguage ->
+			candidates.firstOrNull { (group, index) ->
+				group.getFormat(index).language?.equals(preferredLanguage, ignoreCase = true) == true
+			}?.let { return it }
+		}
+
 		val deviceLanguage = Locale.getDefault().language.lowercase()
 
 		if (deviceLanguage.startsWith("zh")) {
-			val simplifiedMarkers = listOf("绠€", "gb", "chs")
+			val simplifiedMarkers = listOf("简体", "简中", "chs", "gb", "sc")
 			candidates.firstOrNull { (group, index) ->
 				val label = group.getFormat(index).label.orEmpty().lowercase()
 				simplifiedMarkers.any(label::contains)

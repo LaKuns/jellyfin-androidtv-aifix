@@ -1,4 +1,4 @@
-package org.jellyfin.androidtv.ui.player.video
+﻿package org.jellyfin.androidtv.ui.player.video
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -59,6 +59,7 @@ import org.jellyfin.androidtv.ui.base.button.ButtonColors
 import org.jellyfin.playback.core.PlaybackManager
 import org.jellyfin.playback.core.backend.AudioTrack
 import org.jellyfin.playback.core.backend.AudioTrackBackend
+import org.jellyfin.playback.core.backend.SubtitleTrack
 import org.jellyfin.playback.core.backend.SubtitleTrackBackend
 import org.jellyfin.playback.core.model.RepeatMode
 import org.jellyfin.playback.core.queue.queue
@@ -278,6 +279,16 @@ private fun SubtitlesSection(
 ) {
 	val backend = playbackManager.backend as? SubtitleTrackBackend ?: return
 	var enabled by remember(backend) { mutableStateOf(backend.isSubtitlesEnabled()) }
+	var tracks by remember(backend) { mutableStateOf<List<SubtitleTrack>>(emptyList()) }
+
+	// The tracks are only known after the item prepared, and they change with the item.
+	LaunchedEffect(backend) {
+		while (true) {
+			val latest = backend.getSubtitleTracks()
+			if (latest != tracks) tracks = latest
+			delay(1_000)
+		}
+	}
 
 	SectionTitle(stringResource(R.string.lbl_subtitle_track))
 	PanelRow(
@@ -289,6 +300,23 @@ private fun SubtitlesSection(
 		},
 	) {
 		Text(stringResource(if (enabled) R.string.lbl_subtitles_on else R.string.lbl_subtitles_off))
+	}
+
+	// The item can carry more than one text track (for example simplified and traditional
+	// Chinese); offer them the way the audio tracks are offered, below the on/off switch.
+	if (tracks.size > 1) {
+		tracks.forEach { track ->
+			PanelRow(
+				selected = track.isSelected,
+				onClick = {
+					backend.setSubtitleTrack(track.id)
+					enabled = true
+					tracks = backend.getSubtitleTracks()
+				},
+			) {
+				Text(track.label)
+			}
+		}
 	}
 }
 
