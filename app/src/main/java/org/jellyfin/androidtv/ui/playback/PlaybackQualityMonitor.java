@@ -130,7 +130,8 @@ public final class PlaybackQualityMonitor {
 		if (presentationTimeUs >= 0 && referenceWallClockMs >= 0
 				&& firstFrameWallClockMs >= 0
 				&& SystemClock.elapsedRealtime() - firstFrameWallClockMs >= STARTUP_SETTLE_MS
-				&& player.getPlaybackState() == androidx.media3.common.Player.STATE_READY) {
+				&& player.getPlaybackState() == androidx.media3.common.Player.STATE_READY
+				&& player.isPlaying()) {
 			long nowMs = SystemClock.elapsedRealtime();
 			long positionNowMs = player.getCurrentPosition();
 			long audioClockAtFrameMs = positionNowMs - (nowMs - referenceWallClockMs);
@@ -181,3 +182,4 @@ public final class PlaybackQualityMonitor {
 		player.clearVideoFrameMetadataListener(videoFrameMetadataListener);
 	}
 }
+

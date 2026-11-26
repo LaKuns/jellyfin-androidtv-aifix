@@ -35,6 +35,8 @@ import java.util.Locale
 @UnstableApi
 class PlaybackQualityMonitor(
 	private val player: ExoPlayer,
+	/** Only sample while the viewer is really playing: a paused player has no audio clock to compare. */
+	private val isPlaying: () -> Boolean = { player.isPlaying },
 ) {
 	private companion object {
 		/** How often the collected numbers are written to the log. */
@@ -145,7 +147,8 @@ class PlaybackQualityMonitor(
 		val referenceWallClockMs = if (lastReleaseWallClockMs > 0) lastReleaseWallClockMs else frameWallClockMs
 		if (presentationTimeUs >= 0 && referenceWallClockMs >= 0 && firstFrameWallClockMs >= 0 &&
 			SystemClock.elapsedRealtime() - firstFrameWallClockMs >= STARTUP_SETTLE_MS &&
-			player.playbackState == Player.STATE_READY
+			player.playbackState == Player.STATE_READY &&
+			isPlaying()
 		) {
 			val nowMs = SystemClock.elapsedRealtime()
 			val positionNowMs = player.currentPosition
@@ -210,3 +213,4 @@ class PlaybackQualityMonitor(
 		player.removeAnalyticsListener(analyticsListener)
 	}
 }
+
