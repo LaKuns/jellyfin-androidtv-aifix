@@ -82,7 +82,6 @@ fun VideoPlayerOverlay(
 	val currentVisibilityState = rememberUpdatedState(visibilityState)
 	DisposableEffect(Unit) {
 		PlayerKeyHandler.setHandler { keyCode, repeatCount ->
-			Timber.i("PKEY key=%d repeat=%d visible=%s", keyCode, repeatCount, currentVisibilityState.value.visible)
 			val state = currentVisibilityState.value
 			when {
 				// Back closes the controls first and leaves the player on the second press.

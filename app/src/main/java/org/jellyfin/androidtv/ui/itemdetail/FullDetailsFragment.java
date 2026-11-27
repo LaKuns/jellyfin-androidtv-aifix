@@ -765,7 +765,9 @@ public class FullDetailsFragment extends Fragment implements RecordingIndicatorV
         // adapter there calls notifyItemRangeInserted() while the RecyclerView is
         // computing a layout, which throws an IllegalStateException. Post the
         // additions so they run once the current layout pass has finished.
-        mLoopHandler.post(() -> {
+        // Wait a moment so the extra rows are not inserted while the viewer is moving the
+        // focus: every insertion shifts the rows below and makes the focus jump.
+        mLoopHandler.postDelayed(() -> {
             // The rows adapter was rebuilt (item changed) or we were detached.
             if (adapter != mRowsAdapter) return;
             if (!isAdded() || !getLifecycle().getCurrentState().isAtLeast(Lifecycle.State.STARTED) || mBaseItem == null) {
@@ -775,7 +777,7 @@ public class FullDetailsFragment extends Fragment implements RecordingIndicatorV
             }
 
             addSecondaryRows(adapter, mBaseItem);
-        });
+        }, 450);
     }
 
     private void addSecondaryRows(MutableObjectAdapter<Row> adapter, BaseItemDto item) {
