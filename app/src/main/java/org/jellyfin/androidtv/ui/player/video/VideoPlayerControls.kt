@@ -149,7 +149,10 @@ fun VideoPlayerControls(
 			modifier = Modifier
 				.fillMaxWidth()
 				.focusRestorer()
-				.focusGroup(),
+				.focusGroup()
+				// DOWN from any button moves to the progress bar; without this the seekbar can
+				// not be reached with the remote at all.
+				.focusProperties { down = seekbarFocus },
 		) {
 			PlayPauseButton(
 				playbackManager = playbackManager,
