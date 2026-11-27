@@ -1,5 +1,6 @@
 package org.jellyfin.androidtv.ui.player.video
 
+import android.os.SystemClock
 import android.view.KeyEvent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -44,8 +45,17 @@ fun VideoPlayerOverlay(
 ) {
 	val playState by playbackManager.state.playState.collectAsState()
 	val visibilityState = rememberPlayerOverlayVisibility(timeout = if (playState == PlayState.PAUSED) null else 5.seconds)
+
+	// Entering the player starts silently: the controls are only shown after an explicit action
+	// of the viewer. A seek makes the player report a short paused/playing change; that change
+	// must not open the bar, otherwise a held direction key loses its target (the focus is
+	// pulled into the controls) and the picture keeps the bar on top.
+	var lastSeekAtMs by remember { mutableStateOf(0L) }
 	LaunchedEffect(playState) {
-		if (playState == PlayState.PAUSED || playState == PlayState.PLAYING) visibilityState.show()
+		if (playState == PlayState.PAUSED) {
+			delay(400)
+			if (SystemClock.elapsedRealtime() - lastSeekAtMs > 800) visibilityState.show()
+		}
 	}
 
 	// Feedback for the direct seek of the hidden overlay: one short line instead of the full bar.
@@ -83,12 +93,14 @@ fun VideoPlayerOverlay(
 				!state.visible -> when (keyCode) {
 					// Seek without opening the bar, the viewer sees what was skipped in one line.
 					KeyEvent.KEYCODE_DPAD_LEFT -> {
+						lastSeekAtMs = SystemClock.elapsedRealtime()
 						seekHint = seek(playbackManager, forward = false, repeatCount = repeatCount)
 						seekHintGeneration++
 						true
 					}
 
 					KeyEvent.KEYCODE_DPAD_RIGHT -> {
+						lastSeekAtMs = SystemClock.elapsedRealtime()
 						seekHint = seek(playbackManager, forward = true, repeatCount = repeatCount)
 						seekHintGeneration++
 						true
@@ -98,7 +110,12 @@ fun VideoPlayerOverlay(
 					KeyEvent.KEYCODE_ENTER,
 					KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
 						when (playState) {
-							PlayState.PLAYING -> playbackManager.state.pause()
+							PlayState.PLAYING -> {
+								playbackManager.state.pause()
+								// A pause is an explicit action: show the controls with it.
+								visibilityState.show()
+							}
+
 							PlayState.PAUSED -> playbackManager.state.unpause()
 							else -> playbackManager.state.play()
 						}

@@ -2,6 +2,8 @@ package org.jellyfin.playback.media3.exoplayer
 
 import android.app.ActivityManager
 import android.content.Context
+import android.graphics.Color
+import android.net.Uri
 import android.os.SystemClock
 import android.view.ViewGroup
 import androidx.annotation.OptIn
@@ -29,6 +31,7 @@ import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.exoplayer.util.EventLogger
 import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.media3.extractor.ts.TsExtractor
+import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.SubtitleView
 import io.github.peerless2012.ass.media.AssHandler
 import io.github.peerless2012.ass.media.AssHandlerConfig
@@ -72,6 +75,9 @@ class ExoPlayerBackend(
 	private val exoPlayerOptions: ExoPlayerOptions,
 ) : BasePlayerBackend(), AudioTrackBackend, SubtitleTrackBackend {
 	companion object {
+		/** Text size of the old player that the subtitle size preference is relative to. */
+		private const val DEFAULT_SUBTITLE_TEXT_SIZE = 24f
+
 		const val TS_SEARCH_BYTES_LM = TsExtractor.TS_PACKET_SIZE * 1800
 		const val TS_SEARCH_BYTES_HM = TsExtractor.DEFAULT_TIMESTAMP_SEARCH_BYTES
 		const val MEDIA_ITEM_COUNT_MAX = 10
@@ -367,8 +373,27 @@ class ExoPlayerBackend(
 			if (subtitleView == null) {
 				subtitleView = SubtitleView(surfaceView.context).apply {
 					// The view is created here and not by a PlayerView, so the text size has to be
-					// set explicitly, otherwise the cues are one pixel high.
-					setFractionalTextSize(SubtitleView.DEFAULT_TEXT_SIZE_FRACTION)
+					// set explicitly, otherwise the cues are one pixel high. The size and the
+					// position follow the subtitle preferences of the user like in the old player;
+					// the background stays transparent so a styled subtitle can not cover the
+					// picture with a black box.
+					val strokeColor = exoPlayerOptions.subtitleStrokeColor
+					val hasStroke = (strokeColor ushr 24) != 0
+					setFractionalTextSize(
+						exoPlayerOptions.subtitleTextSize / DEFAULT_SUBTITLE_TEXT_SIZE *
+							SubtitleView.DEFAULT_TEXT_SIZE_FRACTION
+					)
+					setBottomPaddingFraction(exoPlayerOptions.subtitleBottomPaddingFraction)
+					setStyle(
+						CaptionStyleCompat(
+							exoPlayerOptions.subtitleTextColor,
+							Color.TRANSPARENT,
+							Color.TRANSPARENT,
+							if (hasStroke) CaptionStyleCompat.EDGE_TYPE_OUTLINE else CaptionStyleCompat.EDGE_TYPE_NONE,
+							strokeColor,
+							null,
+						)
+					)
 					if (exoPlayerOptions.enableLibass && assHandler.renderType != AssRenderType.CUES) {
 						addView(AssSubtitleView(surfaceView.context, assHandler))
 					}
@@ -391,6 +416,23 @@ class ExoPlayerBackend(
 			setTag(item)
 			setMediaId(stream.hashCode().toString())
 			setUri(stream.url)
+
+			// Subtitle files that are not part of the main stream (the server sends the ASS
+			// tracks of a transcoded film as WebVTT next to the HLS playlist). The media source
+			// factory merges them into the playback, so the tracks show up in the subtitle list
+			// and can be toggled like embedded ones.
+			if (stream.externalSubtitles.isNotEmpty()) {
+				setSubtitleConfigurations(
+					stream.externalSubtitles.map { subtitle ->
+						MediaItem.SubtitleConfiguration.Builder(Uri.parse(subtitle.url))
+							.setMimeType(subtitle.mimeType)
+							.setLanguage(subtitle.language)
+							.setLabel(subtitle.label)
+							.setSelectionFlags(if (subtitle.isDefault) C.SELECTION_FLAG_DEFAULT else 0)
+							.build()
+					}
+				)
+			}
 		}.build()
 
 		// Remove any excessive items from the start

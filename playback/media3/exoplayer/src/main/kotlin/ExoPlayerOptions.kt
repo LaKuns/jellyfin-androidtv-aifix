@@ -25,4 +25,12 @@ data class ExoPlayerOptions(
 	val bufferForPlaybackDuration: Duration? = null,
 	val bufferForPlaybackAfterRebufferDuration: Duration? = null,
 	val audioGain: () -> Int = { 0 },
+	/** Foreground colour of text subtitles (ARGB). */
+	val subtitleTextColor: Int = 0xFFFFFFFF.toInt(),
+	/** Subtitle text size in the unit of the old player (24 is the default). */
+	val subtitleTextSize: Float = 24f,
+	/** Distance of the subtitles from the bottom, as a fraction of the screen height. */
+	val subtitleBottomPaddingFraction: Float = 0.08f,
+	/** Colour of the outline of the text (ARGB, alpha 0 disables the outline). */
+	val subtitleStrokeColor: Int = 0xFFFFFFFF.toInt(),
 )

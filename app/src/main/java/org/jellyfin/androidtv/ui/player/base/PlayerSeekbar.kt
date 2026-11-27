@@ -22,6 +22,8 @@ fun PlayerSeekbar(
 	playbackManager: PlaybackManager = koinInject<PlaybackManager>(),
 	/** Called with the position the user is currently scrubbing to, while the bar has the focus. */
 	onScrubProgress: ((Duration) -> Unit)? = null,
+	/** Called when a seek was issued and the bar keeps showing the target until it is reached. */
+	onPendingProgress: ((Duration?) -> Unit)? = null,
 	/** Called when a scrub starts (true) and when the seek has been issued (false). */
 	onScrubbingChange: ((Boolean) -> Unit)? = null,
 ) {
@@ -46,6 +48,7 @@ fun PlayerSeekbar(
 			onScrubbingChange?.invoke(scrubbing)
 		},
 		onScrubProgress = onScrubProgress,
+		onPendingProgress = onPendingProgress,
 		onSeek = { progress -> playbackManager.state.seek(progress) },
 		modifier = modifier,
 		colors = colors,

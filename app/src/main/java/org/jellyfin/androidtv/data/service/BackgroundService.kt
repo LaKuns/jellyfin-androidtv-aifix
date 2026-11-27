@@ -22,8 +22,13 @@ import org.jellyfin.androidtv.preference.UserPreferences
 import org.jellyfin.androidtv.preference.constant.BackdropBehavior
 import org.jellyfin.androidtv.util.PerformanceProfile
 import org.jellyfin.androidtv.util.apiclient.getUrl
+import org.jellyfin.androidtv.util.apiclient.itemImages
+import org.jellyfin.androidtv.util.apiclient.seriesPrimaryImage
+import org.jellyfin.androidtv.util.apiclient.seriesThumbImage
+import org.jellyfin.sdk.model.api.ImageType
 import org.jellyfin.androidtv.util.apiclient.itemBackdropImages
 import org.jellyfin.androidtv.util.apiclient.parentBackdropImages
+import org.jellyfin.androidtv.util.apiclient.parentImages
 import org.jellyfin.sdk.Jellyfin
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.client.extensions.imageApi
@@ -120,12 +125,37 @@ class BackgroundService(
 	 */
 	private fun backdropUrls(baseItem: BaseItemDto): Set<String> {
 		val (width, height) = backgroundSize
-		return (baseItem.itemBackdropImages + baseItem.parentBackdropImages)
-			.asSequence()
-			.map { it.getUrl(api, fillWidth = width, fillHeight = height) }
-			.distinct()
-			.take(maxBackgroundCount)
-			.toSet()
+		val backdrops = baseItem.itemBackdropImages + baseItem.parentBackdropImages
+		// Many series in the library carry no backdrop image. The detail screen must not be
+		// plain black then: a landscape thumb or the poster is used as the background instead,
+		// filled to the screen. Items that have a real backdrop keep using it.
+		val images = backdrops.ifEmpty {
+			listOfNotNull(
+				baseItem.itemImages[ImageType.THUMB],
+				baseItem.seriesThumbImage,
+				baseItem.parentImages[ImageType.THUMB],
+				baseItem.itemImages[ImageType.PRIMARY],
+				baseItem.seriesPrimaryImage,
+				baseItem.parentImages[ImageType.PRIMARY],
+			)
+		}
+		return if (backdrops.isNotEmpty()) {
+			backdrops
+				.asSequence()
+				.map { it.getUrl(api, fillWidth = width, fillHeight = height) }
+				.distinct()
+				.take(maxBackgroundCount)
+				.toSet()
+		} else {
+			// A poster is not 16:9: request it contained and let the view crop it to the
+			// screen, asking the server to fill would pad the sides with black bars.
+			images
+				.asSequence()
+				.map { it.getUrl(api, maxWidth = width, maxHeight = height) }
+				.distinct()
+				.take(maxBackgroundCount)
+				.toSet()
+		}
 	}
 
 	/**

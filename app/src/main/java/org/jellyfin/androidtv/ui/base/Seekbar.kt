@@ -7,6 +7,7 @@ import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -73,6 +74,7 @@ fun Seekbar(
 	seekRewindAmount: Duration = duration / 100,
 	onScrubbing: ((scrubbing: Boolean) -> Unit)? = null,
 	onScrubProgress: ((progress: Duration) -> Unit)? = null,
+	onPendingProgress: ((progress: Duration?) -> Unit)? = null,
 	onSeek: ((progress: Duration) -> Unit)? = null,
 	enabled: Boolean = true,
 	colors: SeekbarColors = SeekbarDefaults.colors(),
@@ -92,6 +94,9 @@ fun Seekbar(
 		seekRewindAmount = seekRewindPercentage,
 		onScrubbing = onScrubbing,
 		onScrubProgress = if (onScrubProgress == null) null else { progress -> onScrubProgress(progress.toDouble() * duration) },
+		onPendingProgress = if (onPendingProgress == null) null else { progress ->
+			onPendingProgress(progress?.toDouble()?.times(duration))
+		},
 		onSeek = if (onSeek == null) null else { progress -> onSeek(progress.toDouble() * duration) },
 		enabled = enabled,
 		colors = colors,
@@ -108,6 +113,7 @@ fun Seekbar(
 	seekRewindAmount: Float = 0.01f,
 	onScrubbing: ((scrubbing: Boolean) -> Unit)? = null,
 	onScrubProgress: ((progress: Float) -> Unit)? = null,
+	onPendingProgress: ((progress: Float?) -> Unit)? = null,
 	onSeek: ((progress: Float) -> Unit)? = null,
 	enabled: Boolean = true,
 	colors: SeekbarColors = SeekbarDefaults.colors(),
@@ -115,10 +121,27 @@ fun Seekbar(
 	val coroutineScope = rememberCoroutineScope()
 	val focused by interactionSource.collectIsFocusedAsState()
 	var progressOverride by remember { mutableStateOf<Float?>(null) }
-	val visibleProgress = progressOverride ?: progress
+	// The position the player was asked to seek to; the bar keeps showing it until the player
+	// really reached it instead of jumping back to the old position while the seek loads.
+	var pendingProgress by remember { mutableStateOf<Float?>(null) }
+	val visibleProgress = progressOverride ?: pendingProgress ?: progress
 	val knobAlpha by animateFloatAsState(if (focused) 1f else 0f)
 	var scrubCancelJob by remember { mutableStateOf<Job?>(null) }
 	var scrubbingActive by remember { mutableStateOf(false) }
+
+	// Once the player caught up with the requested position the bar follows it again.
+	LaunchedEffect(progress, pendingProgress) {
+		val target = pendingProgress ?: return@LaunchedEffect
+		if (kotlin.math.abs(progress - target) <= 0.004f) pendingProgress = null
+	}
+	// A seek that never completes (a broken stream) must not freeze the bar forever.
+	LaunchedEffect(pendingProgress) {
+		onPendingProgress?.invoke(pendingProgress)
+		if (pendingProgress == null) return@LaunchedEffect
+		delay(6_000)
+		pendingProgress = null
+		onPendingProgress?.invoke(null)
+	}
 
 	Box(
 		modifier = modifier
@@ -158,7 +181,11 @@ fun Seekbar(
 						// second of pure UI latency in front of every seek. 120 ms is still far
 						// longer than a remote's key repeat interval, so merging is unchanged.
 						delay(SCRUB_SETTLE_DELAY)
-						progressOverride?.let { onSeek?.invoke(it) }
+						progressOverride?.let { target ->
+							// Keep the target visible while the player loads the new position.
+							pendingProgress = target
+							onSeek?.invoke(target)
+						}
 						onScrubbing?.invoke(false)
 						scrubbingActive = false
 						progressOverride = null

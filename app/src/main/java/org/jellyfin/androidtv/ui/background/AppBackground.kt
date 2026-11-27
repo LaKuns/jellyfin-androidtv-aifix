@@ -119,44 +119,23 @@ private fun BackgroundImage(
 		return
 	}
 
-	// The blur is applied to a layer that has the resolution of the image and the
-	// result is scaled up to the screen afterwards. A blur of the fullscreen
-	// picture runs with the resolution of the television, which is expensive on the
-	// weak GPUs that are found in TV boxes.
-	//
-	// The scaling factor is the one that ContentScale.Crop would use, so the
-	// picture itself stays exactly the same.
-	val density = LocalDensity.current.density
-	val configuration = LocalConfiguration.current
-	val screenWidth = configuration.screenWidthDp * density
-	val screenHeight = configuration.screenHeightDp * density
-	val imageWidth = background.width
-	val imageHeight = background.height
-
-	val imageIsUsable = imageWidth > 0 && imageHeight > 0
-	val screenIsUsable = screenWidth > 0 && screenHeight > 0
-	if (!imageIsUsable || !screenIsUsable) {
-		BackgroundBitmap(background, colorFilter, Modifier.fillMaxSize())
-		return
-	}
-
-	val scale = max(screenWidth / imageWidth, screenHeight / imageHeight)
-
-	Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-		Box(
+	// Blur the layer at the size of the screen. The picture is cropped to fill the screen
+	// first, so a portrait poster used as a fallback background does not show black bars at
+	// the sides; the blur runs once per background change, not per frame.
+	Box(
+		modifier = Modifier.fillMaxSize(),
+		contentAlignment = Alignment.Center,
+	) {
+		Image(
+			bitmap = background,
+			contentDescription = null,
+			alignment = Alignment.Center,
+			contentScale = ContentScale.Crop,
+			colorFilter = colorFilter,
 			modifier = Modifier
-				.size(
-					(imageWidth / density).dp,
-					(imageHeight / density).dp,
-				)
-				.blur(BLUR_RADIUS)
-				.graphicsLayer {
-					scaleX = scale
-					scaleY = scale
-				},
-		) {
-			BackgroundBitmap(background, colorFilter, Modifier.fillMaxSize())
-		}
+				.fillMaxSize()
+				.blur(BLUR_RADIUS),
+		)
 	}
 }
 

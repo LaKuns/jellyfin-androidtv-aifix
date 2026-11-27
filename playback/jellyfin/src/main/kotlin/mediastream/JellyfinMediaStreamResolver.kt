@@ -1,6 +1,7 @@
-﻿package org.jellyfin.playback.jellyfin.mediastream
+package org.jellyfin.playback.jellyfin.mediastream
 
 import org.jellyfin.playback.core.mediastream.MediaConversionMethod
+import org.jellyfin.playback.core.mediastream.ExternalSubtitle
 import org.jellyfin.playback.core.mediastream.MediaStreamResolver
 import org.jellyfin.playback.core.mediastream.PlayableMediaStream
 import org.jellyfin.playback.core.mediastream.PlaybackDegradation
@@ -11,6 +12,7 @@ import org.jellyfin.playback.jellyfin.queue.mediaSourceId
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.client.extensions.audioApi
 import org.jellyfin.sdk.api.client.extensions.mediaInfoApi
+import org.jellyfin.sdk.api.client.extensions.subtitleApi
 import org.jellyfin.sdk.api.client.extensions.videosApi
 import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.DeviceProfile
@@ -27,6 +29,9 @@ class JellyfinMediaStreamResolver(
 ) : MediaStreamResolver {
 	companion object {
 		private val supportedMediaTypes = arrayOf(MediaType.VIDEO, MediaType.AUDIO)
+
+		/** Text subtitle formats the server can convert to WebVTT for a transcode or remux stream. */
+		private val TEXT_SUBTITLE_CODECS = setOf("ass", "ssa", "srt", "subrip", "vtt", "webvtt", "txt", "ttml", "mov_text")
 
 		/** Codec block size of HEVC; a picture with another alignment can not be copied into TS safely. */
 		private const val VIDEO_BLOCK_ALIGNMENT = 16
@@ -94,7 +99,8 @@ class JellyfinMediaStreamResolver(
 			return mediaInfo.toStream(
 				queueEntry = queueEntry,
 				conversionMethod = MediaConversionMethod.Remux,
-				url = api.createUrl(requireNotNull(source.transcodingUrl), ignorePathParameters = true)
+				url = api.createUrl(requireNotNull(source.transcodingUrl), ignorePathParameters = true),
+				externalSubtitles = mediaInfo.externalSubtitles(baseItem, source)
 			)
 		}
 
@@ -103,7 +109,8 @@ class JellyfinMediaStreamResolver(
 			return mediaInfo.toStream(
 				queueEntry = queueEntry,
 				conversionMethod = MediaConversionMethod.Transcode,
-				url = api.createUrl(requireNotNull(source.transcodingUrl), ignorePathParameters = true)
+				url = api.createUrl(requireNotNull(source.transcodingUrl), ignorePathParameters = true),
+				externalSubtitles = mediaInfo.externalSubtitles(baseItem, source)
 			)
 		}
 
@@ -129,7 +136,8 @@ class JellyfinMediaStreamResolver(
 		return width % VIDEO_BLOCK_ALIGNMENT != 0 || height % VIDEO_BLOCK_ALIGNMENT != 0
 	}
 
-	private suspend fun getPlaybackInfo(		item: BaseItemDto,
+	private suspend fun getPlaybackInfo(
+		item: BaseItemDto,
 		mediaSourceId: String? = null,
 		degradation: PlaybackDegradation = PlaybackDegradation.NONE,
 		forceHevcTranscode: Boolean = false,
@@ -170,10 +178,47 @@ class JellyfinMediaStreamResolver(
 		)
 	}
 
+	/**
+	 * Subtitle tracks that have to be loaded next to the HLS stream.
+	 *
+	 * HLS can only carry WebVTT subtitles, so the ASS/SSA tracks of a film are not part of a
+	 * transcoded or remuxed stream. The server offers every text subtitle as WebVTT as well;
+	 * those are handed to the player as side loaded tracks, which keeps the subtitle list and
+	 * the toggle of the player working for transcoded playback too.
+	 */
+	private fun MediaInfo.externalSubtitles(
+		item: BaseItemDto,
+		source: MediaSourceInfo,
+	): List<ExternalSubtitle> = source.mediaStreams
+		.orEmpty()
+		.filter { stream -> stream.type == MediaStreamType.SUBTITLE }
+		.filter { stream -> stream.index != null && stream.codec?.lowercase() in TEXT_SUBTITLE_CODECS }
+		.sortedWith(compareByDescending<org.jellyfin.sdk.model.api.MediaStream> { it.isDefault }.thenBy { it.index })
+		.mapNotNull { stream ->
+			val index = stream.index ?: return@mapNotNull null
+			val url = runCatching {
+				api.subtitleApi.getSubtitleUrl(
+					routeItemId = item.id,
+					routeMediaSourceId = source.id.toString(),
+					routeIndex = index,
+					routeFormat = "vtt",
+				)
+			}.getOrNull() ?: return@mapNotNull null
+
+			ExternalSubtitle(
+				url = url,
+				mimeType = "text/vtt",
+				language = stream.language,
+				label = stream.displayTitle ?: stream.title,
+				isDefault = stream.isDefault == true,
+			)
+		}
+
 	private fun MediaInfo.toStream(
 		queueEntry: QueueEntry,
 		conversionMethod: MediaConversionMethod,
 		url: String,
+		externalSubtitles: List<ExternalSubtitle> = emptyList(),
 	) = PlayableMediaStream(
 		identifier = playSessionId,
 		conversionMethod = conversionMethod,
@@ -181,5 +226,6 @@ class JellyfinMediaStreamResolver(
 		tracks = getTracks(),
 		queueEntry = queueEntry,
 		url = url,
+		externalSubtitles = externalSubtitles,
 	)
 }

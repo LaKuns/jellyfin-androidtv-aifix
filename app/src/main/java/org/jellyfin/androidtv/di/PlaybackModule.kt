@@ -122,6 +122,13 @@ fun Scope.createPlaybackManager() = playbackManager(androidContext()) {
 		bufferForPlaybackAfterRebufferDuration = if (conservativeBuffer) 5.seconds else bufferLength.bufferForPlaybackAfterRebufferDuration,
 		// The gain is read when a playback starts, the same way the old player reads it.
 		audioGain = { userPreferences[UserPreferences.audioBoost].millibels },
+		// The same subtitle style the old player applies. The background is left transparent:
+		// the styles of the library put a black box behind some subtitles, which hides the
+		// picture; the user only wants the text itself.
+		subtitleTextColor = userPreferences[UserPreferences.subtitlesTextColor].toInt(),
+		subtitleTextSize = userPreferences[UserPreferences.subtitlesTextSize],
+		subtitleBottomPaddingFraction = userPreferences[UserPreferences.subtitlesOffsetPosition],
+		subtitleStrokeColor = userPreferences[UserPreferences.subtitleTextStrokeColor].toInt(),
 	)
 	install(exoPlayerPlugin(get(), exoPlayerOptions))
 

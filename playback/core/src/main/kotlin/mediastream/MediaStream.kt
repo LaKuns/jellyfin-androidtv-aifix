@@ -35,7 +35,23 @@ data class PlayableMediaStream(
 	override val tracks: Collection<MediaStreamTrack>,
 	val queueEntry: QueueEntry,
 	val url: String,
+	/**
+	 * Subtitle tracks that are delivered next to the main stream instead of being embedded in it.
+	 *
+	 * A server side HLS stream can not carry ASS subtitles; those are offered as side loaded
+	 * tracks so the player still lists and shows them.
+	 */
+	val externalSubtitles: List<ExternalSubtitle> = emptyList(),
 ) : MediaStream
+
+/** A subtitle file the player loads next to the main media stream. */
+data class ExternalSubtitle(
+	val url: String,
+	val mimeType: String,
+	val language: String?,
+	val label: String?,
+	val isDefault: Boolean = false,
+)
 
 data class MediaStreamContainer(
 	val format: String,

@@ -131,8 +131,12 @@ fun VideoPlayerControls(
 	val seekbarFocus = remember { FocusRequester() }
 	val positionInfo by rememberPlayerPositionInfo(playbackManager, precision = 1.seconds)
 
-	// The time the user is scrubbing to, shown enlarged above the bar until the seek is done.
+	// The time the user is scrubbing to, shown in the right hand time label until the seek is
+	// done. The bar itself keeps the target visible, so no extra text is drawn over the picture.
 	var scrubPosition by remember { mutableStateOf<Duration?>(null) }
+	// The seek that was issued and not reached yet; keeps the right hand time label on the
+	// target while the player loads.
+	var pendingPosition by remember { mutableStateOf<Duration?>(null) }
 
 	Box(modifier = Modifier.fillMaxWidth()) {
 		Column(
@@ -170,7 +174,7 @@ fun VideoPlayerControls(
 
 			Spacer(Modifier.weight(1f))
 
-			TimeLabel(positionInfo)
+			TimeLabel(positionInfo, scrubPosition ?: pendingPosition)
 		}
 
 		PlayerSeekbar(
@@ -190,24 +194,12 @@ fun VideoPlayerControls(
 					}
 				},
 			onScrubProgress = { position -> scrubPosition = position },
+			onPendingProgress = { position -> pendingPosition = position },
 			onScrubbingChange = { scrubbing ->
 				playbackManager.state.setScrubbing(scrubbing)
 				if (!scrubbing) scrubPosition = null
 			},
 		)
-		}
-
-		// The time the user scrubs to is drawn above the row instead of inside it, so the rows
-		// do not jump up and down while the bar is being dragged.
-		scrubPosition?.let { position ->
-			Text(
-				text = position.formatted(positionInfo.duration.inWholeMinutes >= 60),
-				fontSize = 34.sp,
-				style = LocalTextStyle.current.copy(color = Color.White),
-				modifier = Modifier
-					.align(Alignment.BottomCenter)
-					.padding(bottom = 64.dp),
-			)
 		}
 	}
 }
@@ -285,11 +277,12 @@ private fun ControlBarSeparator() = Box(
 )
 
 @Composable
-private fun TimeLabel(positionInfo: PositionInfo) {
+private fun TimeLabel(positionInfo: PositionInfo, positionOverride: Duration? = null) {
 	if (positionInfo.duration == Duration.ZERO) return
 
 	val includeHours = positionInfo.duration.inWholeMinutes >= 60
-	val text = "${positionInfo.active.formatted(includeHours)} / ${positionInfo.duration.formatted(includeHours)}"
+	val current = positionOverride ?: positionInfo.active
+	val text = "${current.formatted(includeHours)} / ${positionInfo.duration.formatted(includeHours)}"
 
 	Text(
 		text = text,
