@@ -15,8 +15,11 @@ import org.jellyfin.sdk.api.client.extensions.videosApi
 import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.DeviceProfile
 import org.jellyfin.sdk.model.api.MediaProtocol
+import org.jellyfin.sdk.model.api.MediaSourceInfo
+import org.jellyfin.sdk.model.api.MediaStreamType
 import org.jellyfin.sdk.model.api.MediaType
 import org.jellyfin.sdk.model.api.PlaybackInfoDto
+import timber.log.Timber
 
 class JellyfinMediaStreamResolver(
 	private val api: ApiClient,
@@ -24,6 +27,9 @@ class JellyfinMediaStreamResolver(
 ) : MediaStreamResolver {
 	companion object {
 		private val supportedMediaTypes = arrayOf(MediaType.VIDEO, MediaType.AUDIO)
+
+		/** Codec block size of HEVC; a picture with another alignment can not be copied into TS safely. */
+		private const val VIDEO_BLOCK_ALIGNMENT = 16
 	}
 
 	override suspend fun getStream(queueEntry: QueueEntry): PlayableMediaStream? {
@@ -34,8 +40,22 @@ class JellyfinMediaStreamResolver(
 		// and the server is asked for a stream that is more likely to play (see
 		// [PlaybackDegradation]).
 		val degradation = queueEntry.playbackDegradation ?: PlaybackDegradation.NONE
-		val mediaInfo = getPlaybackInfo(baseItem, queueEntry.mediaSourceId, degradation)
-		val source = mediaInfo.mediaSource
+		var mediaInfo = getPlaybackInfo(baseItem, queueEntry.mediaSourceId, degradation)
+		var source = mediaInfo.mediaSource
+
+		// A few HEVC films have a picture height that is not a multiple of the codec block size
+		// (for example 3840x1608). When only the audio needs a transcode the server copies the video
+		// into an HLS/TS stream, and the hardware decoder of the box draws green blocks for a few
+		// scenes of those files. Re-encoding the video avoids the broken remux path.
+		if (
+			degradation != PlaybackDegradation.TRANSCODE &&
+			source.transcodingUrl != null &&
+			needsVideoReencode(source)
+		) {
+			Timber.i("Video remux of an unaligned HEVC picture, asking the server for a re-encode instead")
+			mediaInfo = getPlaybackInfo(baseItem, queueEntry.mediaSourceId, PlaybackDegradation.TRANSCODE)
+			source = mediaInfo.mediaSource
+		}
 
 		// Direct play video
 		if (degradation == PlaybackDegradation.NONE && source.supportsDirectPlay && baseItem.mediaType == MediaType.VIDEO) {
@@ -91,8 +111,25 @@ class JellyfinMediaStreamResolver(
 		return null
 	}
 
-	private suspend fun getPlaybackInfo(
-		item: BaseItemDto,
+	/**
+	 * Whether the video has to be re-encoded instead of copied into the HLS stream.
+	 *
+	 * The hardware decoder of the box draws green blocks for HEVC pictures whose size is not
+	 * aligned to the 16 pixel block of the codec when the picture is copied into MPEG-TS (the
+	 * library contains a 3840x1608 film). A re-encode delivers a clean H.264 stream instead.
+	 */
+	private fun needsVideoReencode(source: MediaSourceInfo): Boolean {
+		val video = source.mediaStreams?.firstOrNull { stream -> stream.type == MediaStreamType.VIDEO } ?: run {
+			Timber.i("No video stream information, keeping the server decision")
+			return false
+		}
+		if (!video.codec.equals("hevc", ignoreCase = true)) return false
+		val width = video.width ?: return false
+		val height = video.height ?: return false
+		return width % VIDEO_BLOCK_ALIGNMENT != 0 || height % VIDEO_BLOCK_ALIGNMENT != 0
+	}
+
+	private suspend fun getPlaybackInfo(		item: BaseItemDto,
 		mediaSourceId: String? = null,
 		degradation: PlaybackDegradation = PlaybackDegradation.NONE,
 	): MediaInfo {
