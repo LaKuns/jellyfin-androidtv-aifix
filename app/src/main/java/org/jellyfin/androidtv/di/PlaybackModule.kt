@@ -1,4 +1,4 @@
-package org.jellyfin.androidtv.di
+﻿package org.jellyfin.androidtv.di
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -133,7 +133,7 @@ fun Scope.createPlaybackManager() = playbackManager(androidContext()) {
 	)
 	install(media3SessionPlugin(get(), mediaSessionOptions))
 
-	val deviceProfileBuilder = { createDeviceProfile(androidContext(), userPreferences, get()) }
+	val deviceProfileBuilder = { forceHevcTranscode: Boolean -> createDeviceProfile(androidContext(), userPreferences, get(), forceHevcTranscode = forceHevcTranscode) }
 	install(jellyfinPlugin(get(), deviceProfileBuilder, setOf(MediaSegmentType.INTRO), ProcessLifecycleOwner.get().lifecycle))
 
 	// Options

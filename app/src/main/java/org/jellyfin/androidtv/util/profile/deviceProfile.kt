@@ -1,4 +1,4 @@
-package org.jellyfin.androidtv.util.profile
+﻿package org.jellyfin.androidtv.util.profile
 
 import android.content.Context
 import android.util.DisplayMetrics
@@ -83,6 +83,7 @@ fun createDeviceProfile(
 	serverVersion: ServerVersion,
 	sourceBitrate: Int? = null,
 	containerBitrate: Int? = null,
+	forceHevcTranscode: Boolean = false,
 ) = PerformanceProfile.isLowPerformanceDevice(context).let { lowPerformanceDevice ->
 	// The device profile answers the question "what may the server send to this
 	// device". A format that can only be decoded in software is not playable on
@@ -172,6 +173,7 @@ fun createDeviceProfile(
 		forceDisabledHdr = userPreferences.getHdrRangeTypesFor(HdrOverrideMode.DISABLE),
 		disableHevcDirectPlay = userPreferences[UserPreferences.disableHevcDirectPlay],
 		disableHevcMain10DirectPlay = userPreferences[UserPreferences.disableHevcMain10DirectPlay],
+		forceHevcTranscode = forceHevcTranscode,
 		maxVideoWidth = resolutionLimit?.width,
 		maxVideoHeight = resolutionLimit?.height,
 		displayHdr = displayHdr,
@@ -197,6 +199,7 @@ fun createDeviceProfile(
 	maxVideoWidth: Int? = null,
 	maxVideoHeight: Int? = null,
 	displayHdr: DisplayHdrCapabilities = DisplayHdrCapabilities(),
+	forceHevcTranscode: Boolean = false,
 ) = buildDeviceProfile {
 	// The surround formats are the only ones that need a decision: the user may enable or
 	// disable them. The automatic mode allows them, because the bundled ffmpeg decoders play
@@ -220,7 +223,7 @@ fun createDeviceProfile(
 	// HEVC direct play can be disabled by the user. A device that reports HEVC support but can
 	// only decode it in software stalls the playback completely, so it is safer to let the
 	// server transcode those files to H.264 at the original resolution instead.
-	val hevcDirectPlayEnabled = !disableHevcDirectPlay
+	val hevcDirectPlayEnabled = !disableHevcDirectPlay && !forceHevcTranscode
 	val hevcMain10DirectPlayEnabled = hevcDirectPlayEnabled && !disableHevcMain10DirectPlay
 
 	val supportsHevc = mediaTest.supportsHevc() && hevcDirectPlayEnabled

@@ -1,4 +1,4 @@
-package org.jellyfin.playback.jellyfin
+﻿package org.jellyfin.playback.jellyfin
 
 import androidx.lifecycle.Lifecycle
 import org.jellyfin.playback.core.plugin.playbackPlugin
@@ -13,7 +13,7 @@ import org.jellyfin.sdk.model.api.MediaSegmentType
 
 fun jellyfinPlugin(
 	api: ApiClient,
-	deviceProfileBuilder: () -> DeviceProfile,
+	deviceProfileBuilder: (forceHevcTranscode: Boolean) -> DeviceProfile,
 	mediaSegmentSkipTypes: Set<MediaSegmentType> = emptySet(),
 	lifecycle: Lifecycle? = null,
 ) = playbackPlugin {

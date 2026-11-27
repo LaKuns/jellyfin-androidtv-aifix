@@ -1,4 +1,4 @@
-package org.jellyfin.playback.jellyfin.mediastream
+﻿package org.jellyfin.playback.jellyfin.mediastream
 
 import org.jellyfin.playback.core.mediastream.MediaConversionMethod
 import org.jellyfin.playback.core.mediastream.MediaStreamResolver
@@ -23,7 +23,7 @@ import timber.log.Timber
 
 class JellyfinMediaStreamResolver(
 	private val api: ApiClient,
-	private val deviceProfileBuilder: () -> DeviceProfile,
+	private val deviceProfileBuilder: (forceHevcTranscode: Boolean) -> DeviceProfile,
 ) : MediaStreamResolver {
 	companion object {
 		private val supportedMediaTypes = arrayOf(MediaType.VIDEO, MediaType.AUDIO)
@@ -53,7 +53,7 @@ class JellyfinMediaStreamResolver(
 			needsVideoReencode(source)
 		) {
 			Timber.i("Video remux of an unaligned HEVC picture, asking the server for a re-encode instead")
-			mediaInfo = getPlaybackInfo(baseItem, queueEntry.mediaSourceId, PlaybackDegradation.TRANSCODE)
+			mediaInfo = getPlaybackInfo(baseItem, queueEntry.mediaSourceId, degradation, forceHevcTranscode = true)
 			source = mediaInfo.mediaSource
 		}
 
@@ -132,8 +132,9 @@ class JellyfinMediaStreamResolver(
 	private suspend fun getPlaybackInfo(		item: BaseItemDto,
 		mediaSourceId: String? = null,
 		degradation: PlaybackDegradation = PlaybackDegradation.NONE,
+		forceHevcTranscode: Boolean = false,
 	): MediaInfo {
-		val profile = deviceProfileBuilder()
+		val profile = deviceProfileBuilder(forceHevcTranscode)
 		val response by api.mediaInfoApi.getPostedPlaybackInfo(
 			itemId = item.id,
 			data = PlaybackInfoDto(
