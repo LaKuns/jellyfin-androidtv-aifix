@@ -69,10 +69,19 @@ fun VideoPlayerOverlay(
 	}
 
 	var showSettings by remember { mutableStateOf(false) }
+	// The effect below runs on its first composition as well; only react to real changes, so
+	// opening the player does not show the control bar.
+	var settingsWasOpen by remember { mutableStateOf(false) }
 	LaunchedEffect(showSettings) {
 		// While the settings sheet is open it owns the focus: hide the control bar, otherwise
 		// its buttons keep the focus and steal the key presses of the sheet.
-		if (showSettings) visibilityState.hide() else visibilityState.show()
+		if (showSettings) {
+			settingsWasOpen = true
+			visibilityState.hide()
+		} else if (settingsWasOpen) {
+			settingsWasOpen = false
+			visibilityState.show()
+		}
 	}
 
 	// The remote control is handled by the activity while the player is on screen, so it works
