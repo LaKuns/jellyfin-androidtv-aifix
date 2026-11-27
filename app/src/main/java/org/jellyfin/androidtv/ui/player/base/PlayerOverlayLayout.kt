@@ -1,4 +1,4 @@
-﻿package org.jellyfin.androidtv.ui.player.base
+package org.jellyfin.androidtv.ui.player.base
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -54,6 +54,7 @@ fun PlayerOverlayLayout(
 		.fillMaxSize()
 		.focusable()
 		.onPreviewKeyEvent {
+			Timber.i("PREVIEW key=%s type=%s visible=%s", it.key, it.type, visibilityState.visible)
 			// Reset hide timer on key presses
 			if (visibilityState.visible) visibilityState.show()
 
@@ -178,6 +179,7 @@ fun rememberPlayerOverlayVisibility(
 	val timerJob = remember { mutableStateOf<Job?>(null) }
 
 	fun show() {
+		Timber.i("OVERLAY show")
 		timerJob.value?.cancel()
 		timerVisible.value = true
 		timerJob.value = timeout?.let { duration ->
@@ -189,6 +191,7 @@ fun rememberPlayerOverlayVisibility(
 	}
 
 	fun hide() {
+		Timber.i("OVERLAY hide")
 		timerJob.value?.cancel()
 		timerJob.value = null
 		timerVisible.value = false
