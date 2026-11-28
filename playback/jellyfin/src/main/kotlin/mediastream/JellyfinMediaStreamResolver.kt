@@ -223,7 +223,9 @@ class JellyfinMediaStreamResolver(
 		conversionMethod: MediaConversionMethod,
 		url: String,
 		externalSubtitles: List<ExternalSubtitle> = emptyList(),
-	) = PlayableMediaStream(
+	) = run {
+		Timber.i("Media stream %s with %d side loaded subtitle(s)", conversionMethod, externalSubtitles.size)
+		PlayableMediaStream(
 		identifier = playSessionId,
 		conversionMethod = conversionMethod,
 		container = getMediaStreamContainer(),
@@ -232,4 +234,5 @@ class JellyfinMediaStreamResolver(
 		url = url,
 		externalSubtitles = externalSubtitles,
 	)
+	}
 }
