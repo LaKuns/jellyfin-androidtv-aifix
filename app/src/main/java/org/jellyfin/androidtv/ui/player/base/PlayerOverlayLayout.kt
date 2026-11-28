@@ -201,13 +201,22 @@ fun rememberPlayerOverlayVisibility(
 	// Force visibility when not the active window, reset timer when it changes
 	// to make sure popups keep the overlay visible
 	val windowInfo = LocalWindowInfo.current
-	// Start as focused: the player can be composed before the window focus event arrives, and
-	// an initially visible bar would swallow the first left/right presses after entering.
+	// The player can be composed before the window focus event arrives. Starting as "focused"
+	// keeps the bar hidden on entry; an early false event is ignored until the window was
+	// focused at least once, otherwise the first left/right press would be used to show the bar
+	// instead of seeking.
 	val windowFocused = remember { mutableStateOf(true) }
+	var windowWasFocused by remember { mutableStateOf(false) }
 	LaunchedEffect(windowInfo.isWindowFocused) {
-		if (windowInfo.isWindowFocused != windowFocused.value) {
-			windowFocused.value = windowInfo.isWindowFocused
-			if (windowInfo.isWindowFocused) show()
+		if (windowInfo.isWindowFocused) {
+			windowWasFocused = true
+			if (!windowFocused.value) {
+				windowFocused.value = true
+				show()
+			}
+		} else if (windowWasFocused) {
+			// A popup window takes the focus: keep the overlay visible while it is open.
+			windowFocused.value = false
 		}
 	}
 

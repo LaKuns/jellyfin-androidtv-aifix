@@ -24,6 +24,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.foundation.focusGroup
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -101,15 +104,20 @@ fun PlayerSettingsPanel(
 	modifier: Modifier = Modifier,
 ) {
 	val focusRequester = remember { FocusRequester() }
+	var panelHasFocus by remember { mutableStateOf(false) }
 
 	LaunchedEffect(visible) {
-		if (visible) {
-			// The enter animation attaches the rows a bit later, so ask a few times until one
-			// of them takes the focus.
-			repeat(10) { attempt ->
-				delay(if (attempt == 0) 120 else 200)
-				runCatching { focusRequester.requestFocus() }
-			}
+		if (!visible) {
+			panelHasFocus = false
+			return@LaunchedEffect
+		}
+		// The enter animation attaches the rows a bit later, so ask a few times until one of
+		// them takes the focus. Stop as soon as the panel owns the focus, otherwise the retry
+		// loop keeps resetting the row the viewer already moved to.
+		repeat(10) { attempt ->
+			delay(if (attempt == 0) 120 else 200)
+			runCatching { focusRequester.requestFocus() }
+			if (panelHasFocus) return@LaunchedEffect
 		}
 	}
 
@@ -138,6 +146,11 @@ fun PlayerSettingsPanel(
 					.fillMaxHeight()
 					.width(PANEL_WIDTH)
 					.background(Color(0xF0141414))
+					// A modal sheet: focus can enter it, but never leaves it to the (hidden) player
+					// controls while the sheet is open.
+					.focusGroup()
+					.focusProperties { onExit = { cancelFocusChange() } }
+					.onFocusChanged { panelHasFocus = it.hasFocus }
 					.onPreviewKeyEvent { event ->
 						if (event.type == KeyEventType.KeyDown && (event.key == Key.Back || event.key == Key.Escape)) {
 							onDismiss()

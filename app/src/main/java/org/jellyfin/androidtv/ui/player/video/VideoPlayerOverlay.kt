@@ -60,6 +60,9 @@ fun VideoPlayerOverlay(
 	var userPaused by remember { mutableStateOf(false) }
 	val visibilityState = rememberPlayerOverlayVisibility(timeout = if (userPaused) null else 5.seconds)
 
+	// The player always starts silently; do not depend on the timing of the window focus event.
+	LaunchedEffect(Unit) { visibilityState.hide() }
+
 	// The timeout is captured when show() runs; re-show after the remember value changed so a
 	// pause by the viewer keeps the bar open instead of hiding after the normal timeout.
 	LaunchedEffect(userPaused) {
@@ -116,7 +119,7 @@ fun VideoPlayerOverlay(
 	// even when the overlay hid itself and nothing holds the focus (see PlayerKeyHandler).
 	val currentVisibilityState = rememberUpdatedState(visibilityState)
 	DisposableEffect(Unit) {
-		PlayerKeyHandler.setHandler { keyCode, repeatCount ->
+		val registration = PlayerKeyHandler.register { keyCode, repeatCount ->
 			// While the settings sheet is open it owns the focus. The activity handler must not
 			// show the control bar (and steal the focus) on every key; only Back closes the
 			// sheet, everything else is left to the focused controls of the sheet.
@@ -186,7 +189,7 @@ fun VideoPlayerOverlay(
 			}
 			}
 		}
-		onDispose { PlayerKeyHandler.setHandler(null) }
+		onDispose { PlayerKeyHandler.unregister(registration) }
 	}
 
 	val entry by rememberQueueEntry(playbackManager)
@@ -197,7 +200,10 @@ fun VideoPlayerOverlay(
 	}
 
 	Box(modifier = modifier) {
-		PlayerOverlayLayout(
+		// The settings sheet is modal: the control bar is not composed while it is open, so the
+		// focus can not fall back to a hidden control bar button.
+		if (!showSettings) {
+			PlayerOverlayLayout(
 			visibilityState = visibilityState,
 			header = {
 				Column {
@@ -217,7 +223,8 @@ fun VideoPlayerOverlay(
 					},
 				)
 			},
-		)
+			)
+		}
 
 		seekHint?.let { hint ->
 			org.jellyfin.androidtv.ui.base.Text(

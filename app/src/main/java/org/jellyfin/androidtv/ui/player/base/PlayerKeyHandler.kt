@@ -15,13 +15,28 @@ import timber.log.Timber
  * normal focus navigation.
  */
 object PlayerKeyHandler {
+	typealias Handler = (keyCode: Int, repeatCount: Int) -> Boolean
+
 	/** [repeatCount] is the auto-repeat counter of the key event, used to accelerate a seek. */
 	@Volatile
-	private var handler: ((keyCode: Int, repeatCount: Int) -> Boolean)? = null
+	private var handler: Handler? = null
 
-	fun setHandler(handler: ((keyCode: Int, repeatCount: Int) -> Boolean)?) {
+	/** Identifies one registration, so an old player composition can never clear a newer one. */
+	class Registration internal constructor(internal val handler: Handler)
+
+	fun register(handler: Handler): Registration {
 		this.handler = handler
-		Timber.i("Player key handler %s", if (handler == null) "cleared" else "registered")
+		Timber.i("Player key handler registered")
+		return Registration(handler)
+	}
+
+	fun unregister(registration: Registration) {
+		// A late dispose of an old player must not remove the handler of the player that replaced
+		// it; this is what made the remote unresponsive after leaving and re-entering playback.
+		if (handler === registration.handler) {
+			handler = null
+			Timber.i("Player key handler cleared")
+		}
 	}
 
 	fun dispatch(keyCode: Int, repeatCount: Int): Boolean = handler?.invoke(keyCode, repeatCount) == true
