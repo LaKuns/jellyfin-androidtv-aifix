@@ -13,6 +13,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.zIndex
 import kotlinx.coroutines.flow.map
 import org.jellyfin.androidtv.data.service.BackgroundService
 import org.jellyfin.androidtv.ui.ScreensaverLock
@@ -63,22 +64,28 @@ fun VideoPlayerScreen() {
 				.align(Alignment.Center)
 		)
 
-		VideoPlayerOverlay(
-			playbackManager = playbackManager,
-			mediaToastRegistry = mediaToastRegistry,
-		)
-
+		// Subtitles are a layer below the controls: the control bar must cover them, never the
+		// other way around.
 		PlayerSubtitles(
 			playbackManager = playbackManager,
 			modifier = Modifier
 				.aspectRatio(aspectRatio, videoSize.height < videoSize.width)
 				.fillMaxSize()
 				.align(Alignment.Center)
+				.zIndex(0f),
+		)
+
+		VideoPlayerOverlay(
+			playbackManager = playbackManager,
+			mediaToastRegistry = mediaToastRegistry,
+			modifier = Modifier.zIndex(1f),
 		)
 
 		BufferingOverlay(
 			playbackManager = playbackManager,
-			modifier = Modifier.fillMaxSize(),
+			modifier = Modifier
+				.fillMaxSize()
+				.zIndex(2f),
 		)
 	}
 }
