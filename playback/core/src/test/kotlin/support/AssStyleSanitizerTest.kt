@@ -24,7 +24,7 @@ class AssStyleSanitizerTest : FunSpec({
 		val output = sanitize(input)
 
 		output shouldContain "Style:Default,Arial,48,&H00FFFFFF,&H000000FF,&H00000000,&HFF000000"
-		output shouldContain ",0,0,0,1,2,0,2," // BorderStyle=1, Shadow=0
+		output shouldContain "Style:Default,Arial,48,&H00FFFFFF,&H000000FF,&H00000000,&HFF000000,0,0,0,0,100,100,0,0,1,2,0,2,10,10,10,1"
 		output shouldContain "Dialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,Hello"
 	}
 

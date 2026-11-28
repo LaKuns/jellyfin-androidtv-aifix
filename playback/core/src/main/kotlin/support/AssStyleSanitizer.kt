@@ -52,7 +52,7 @@ object AssStyleSanitizer {
 
 			if (!trimmed.startsWith("Style:", ignoreCase = true)) return@map raw
 
-			val fields = trimmed.substringAfter(':').split(',').toMutableList()
+			val fields = trimmed.substringAfter(':').trimStart().split(',').toMutableList()
 			fun set(name: String, fallbackIndex: Int, value: String) {
 				val index = formatIndices?.get(name) ?: fallbackIndex
 				if (index in fields.indices) fields[index] = value
@@ -64,7 +64,7 @@ object AssStyleSanitizer {
 
 			changed = true
 			val indent = line.takeWhile { it == ' ' || it == '\t' }
-			"${indent}Style:${fields.joinToString(",")}"
+			"${indent}${trimmed.substringBefore(':')}:${fields.joinToString(",")}"
 		}
 
 		if (!changed) return data.copyOfRange(offset, offset + length)

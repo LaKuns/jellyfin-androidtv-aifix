@@ -178,12 +178,13 @@ class ExoPlayerBackend(
 		val mediaSourceFactory = if (exoPlayerOptions.enableLibass) {
 			// The style sanitizer runs before libass: subtitles that were authored with an opaque
 			// box behind the text are rendered as outlined text only.
-			val subtitleParserFactory = AssStyleSanitizingSubtitleParserFactory(
-				AssSubtitleParserFactory(assHandler)
-			)
-			val assExtractorsFactory = extractorsFactory.withAssMkvSupport(subtitleParserFactory, assHandler)
+			val assSubtitleParserFactory = AssSubtitleParserFactory(assHandler)
+			val assExtractorsFactory = extractorsFactory.withAssMkvSupport(assSubtitleParserFactory, assHandler)
 			DefaultMediaSourceFactory(dataSourceFactory, assExtractorsFactory).apply {
-				setSubtitleParserFactory(subtitleParserFactory)
+				// Side loaded ASS/SSA files go through the sanitizer; embedded ASS of a direct
+				// played file is hidden in favour of the side loaded WebVTT track (see
+				// getSubtitleTracks), so its authored box never reaches the screen either.
+				setSubtitleParserFactory(AssStyleSanitizingSubtitleParserFactory(assSubtitleParserFactory))
 			}
 		} else DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
 
