@@ -554,12 +554,6 @@ class ExoPlayerBackend(
 		currentTracks?.let(::applySubtitleSelection)
 	}
 
-	/** Whether the format is an ASS/SSA subtitle (the only text format with an authored box). */
-	private fun isAssSubtitleFormat(format: Format): Boolean {
-		val mimeType = format.sampleMimeType?.lowercase() ?: return false
-		return "ssa" in mimeType || "ass" in mimeType
-	}
-
 	/**
 	 * The text track groups the viewer may pick.
 	 *
@@ -568,12 +562,16 @@ class ExoPlayerBackend(
 	 * track contains the same text with a clean style.
 	 */
 	private fun subtitleGroups(tracks: Tracks): List<Tracks.Group> {
-		val hasSideLoadedSubtitles = currentStream?.externalSubtitles?.isNotEmpty() == true
+		// The side loaded tracks are the ones we added to the media item; their labels equal the
+		// labels of PlayableMediaStream.externalSubtitles. When they exist, every embedded text
+		// track is hidden: the side loaded WebVTT contains the same text without the authored
+		// ASS style (and without its opaque box).
+		val sideLoadedLabels = currentStream?.externalSubtitles.orEmpty().mapNotNull { it.label }.toSet()
 		return tracks.groups
 			.filter { group -> group.type == C.TRACK_TYPE_TEXT }
 			.filter { group ->
-				!hasSideLoadedSubtitles || (0 until group.length).none { index ->
-					isAssSubtitleFormat(group.getTrackFormat(index))
+				sideLoadedLabels.isEmpty() || (0 until group.length).any { index ->
+					group.getTrackFormat(index).label in sideLoadedLabels
 				}
 			}
 	}
