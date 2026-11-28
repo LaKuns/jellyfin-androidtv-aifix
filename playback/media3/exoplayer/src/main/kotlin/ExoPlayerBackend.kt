@@ -799,6 +799,7 @@ class ExoPlayerBackend(
 			.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !subtitlesEnabled)
 
 		if (subtitlesEnabled) {
+			Timber.i("Subtitle groups: %s (sideLoaded=%d currentStream=%s)", tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }.joinToString { group -> (0 until group.length).joinToString("|") { index -> group.getTrackFormat(index).sampleMimeType ?: "?" } }, currentStream?.externalSubtitles?.size ?: -1, currentStream != null)
 			val textGroups = subtitleGroups(tracks).filter { group ->
 			(0 until group.length).any(group::isTrackSupported)
 		}
