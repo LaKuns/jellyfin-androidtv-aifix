@@ -176,10 +176,14 @@ class ExoPlayerBackend(
 		}
 
 		val mediaSourceFactory = if (exoPlayerOptions.enableLibass) {
-			val assSubtitleParserFactory = AssSubtitleParserFactory(assHandler)
-			val assExtractorsFactory = extractorsFactory.withAssMkvSupport(assSubtitleParserFactory, assHandler)
+			// The style sanitizer runs before libass: subtitles that were authored with an opaque
+			// box behind the text are rendered as outlined text only.
+			val subtitleParserFactory = AssStyleSanitizingSubtitleParserFactory(
+				AssSubtitleParserFactory(assHandler)
+			)
+			val assExtractorsFactory = extractorsFactory.withAssMkvSupport(subtitleParserFactory, assHandler)
 			DefaultMediaSourceFactory(dataSourceFactory, assExtractorsFactory).apply {
-				setSubtitleParserFactory(assSubtitleParserFactory)
+				setSubtitleParserFactory(subtitleParserFactory)
 			}
 		} else DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
 
