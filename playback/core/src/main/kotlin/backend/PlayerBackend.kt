@@ -21,6 +21,9 @@ interface PlayerBackend {
 	fun setSurfaceView(surfaceView: PlayerSurfaceView?)
 	fun setSubtitleView(surfaceView: PlayerSubtitleView?)
 
+	/** Hide the subtitle output while the control bar is on top of it (e.g. while paused). */
+	fun setSubtitleVisibility(visible: Boolean)
+
 	// Data retrieval
 
 	fun setListener(eventListener: PlayerBackendEventListener?)

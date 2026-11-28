@@ -5,6 +5,7 @@ import android.content.Context
 import android.graphics.Color
 import android.net.Uri
 import android.os.SystemClock
+import android.view.View
 import android.view.ViewGroup
 import androidx.annotation.OptIn
 import androidx.core.content.getSystemService
@@ -372,6 +373,10 @@ class ExoPlayerBackend(
 
 	override fun setSurfaceView(surfaceView: PlayerSurfaceView?) {
 		exoPlayer.setVideoSurfaceView(surfaceView?.surface)
+	}
+
+	override fun setSubtitleVisibility(visible: Boolean) {
+		subtitleView?.visibility = if (visible) View.VISIBLE else View.INVISIBLE
 	}
 
 	override fun setSubtitleView(surfaceView: PlayerSubtitleView?) {

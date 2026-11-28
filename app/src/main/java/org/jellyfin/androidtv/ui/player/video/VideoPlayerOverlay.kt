@@ -66,6 +66,14 @@ fun VideoPlayerOverlay(
 		if (userPaused) visibilityState.show()
 	}
 
+	// The subtitle view is an Android view and draws above the Compose overlay on some devices;
+	// hide it while the bar is visible so the bar is always on top (the requirement is that the
+	// subtitles are below the controls).
+	val controlsVisible = visibilityState.visible
+	LaunchedEffect(controlsVisible) {
+		playbackManager.backend.setSubtitleVisibility(!controlsVisible)
+	}
+
 	// Feedback for the direct seek of the hidden overlay: one short line instead of the full bar.
 	var seekHint by remember { mutableStateOf<String?>(null) }
 	var seekHintGeneration by remember { mutableStateOf(0) }
