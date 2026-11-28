@@ -85,6 +85,9 @@ fun VideoPlayerScreen() {
 		AndroidView(
 			factory = { context ->
 				ComposeView(context).apply {
+					// Compose AndroidViews share one hosting layer; a higher Z than the subtitle view
+					// makes the controls draw on top of the subtitles in that layer as well.
+					translationZ = 10f
 					setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
 					setContent {
 						VideoPlayerOverlay(
