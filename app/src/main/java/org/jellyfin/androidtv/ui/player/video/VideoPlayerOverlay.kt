@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -20,8 +21,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import org.jellyfin.androidtv.R
+import org.jellyfin.androidtv.ui.composable.rememberPlayerPositionInfo
 import org.jellyfin.androidtv.ui.composable.rememberQueueEntry
 import org.jellyfin.androidtv.ui.player.base.PlayerKeyHandler
 import org.jellyfin.androidtv.ui.player.base.PlayerOverlayLayout
@@ -30,11 +34,16 @@ import org.jellyfin.androidtv.ui.player.base.toast.MediaToastRegistry
 import org.jellyfin.androidtv.ui.player.base.toast.MediaToasts
 import org.jellyfin.playback.core.PlaybackManager
 import org.jellyfin.playback.core.model.PlayState
+import org.jellyfin.playback.core.queue.queue
 import org.jellyfin.playback.jellyfin.queue.baseItem
+import org.jellyfin.sdk.model.api.BaseItemKind
+import org.jellyfin.sdk.model.api.MediaSegmentType
+import org.jellyfin.playback.jellyfin.mediasegment.MediaSegmentService
 import org.jellyfin.playback.jellyfin.queue.baseItemFlow
 import org.koin.compose.koinInject
 import timber.log.Timber
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 @Composable
@@ -77,6 +86,16 @@ fun VideoPlayerOverlay(
 		}
 	}
 
+	val mediaSegmentService = remember { playbackManager.getService<MediaSegmentService>() }
+	val noActiveSegment = remember { MutableStateFlow<MediaSegmentService.ActiveSegment?>(null) }
+	val activeSegment by (mediaSegmentService?.activeSegment ?: noActiveSegment).collectAsState()
+	val playerPositionInfo by rememberPlayerPositionInfo(playbackManager, 500.milliseconds)
+	val currentSegment = activeSegment?.takeIf { segment ->
+		playerPositionInfo.active >= segment.start && playerPositionInfo.active < segment.end
+	}
+	val currentSegmentState = rememberUpdatedState(currentSegment)
+	var nextEpisodeName by remember { mutableStateOf<String?>(null) }
+
 	// The remote control is handled by the activity while the player is on screen, so it works
 	// even when the overlay hid itself and nothing holds the focus (see PlayerKeyHandler).
 	val currentVisibilityState = rememberUpdatedState(visibilityState)
@@ -109,7 +128,9 @@ fun VideoPlayerOverlay(
 					KeyEvent.KEYCODE_DPAD_CENTER,
 					KeyEvent.KEYCODE_ENTER,
 					KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
-						when (playState) {
+						if (currentSegmentState.value != null) {
+							mediaSegmentService?.skipActiveSegment()
+						} else when (playState) {
 							PlayState.PLAYING -> {
 								playbackManager.state.pause()
 								userPaused = true
@@ -142,6 +163,10 @@ fun VideoPlayerOverlay(
 
 	val entry by rememberQueueEntry(playbackManager)
 	val item = entry?.run { baseItemFlow.collectAsState(baseItem) }?.value
+
+	LaunchedEffect(entry) {
+		nextEpisodeName = runCatching { playbackManager.queue?.peekNext()?.baseItem?.name }.getOrNull()
+	}
 
 	Box(modifier = modifier) {
 		PlayerOverlayLayout(
@@ -176,6 +201,47 @@ fun VideoPlayerOverlay(
 					.padding(horizontal = 20.dp, vertical = 10.dp),
 				color = Color.White,
 			)
+		}
+
+		// The server tells the app where the intro/outro starts; the viewer can skip it with OK.
+		currentSegment?.let { segment ->
+			val text = when (segment.type) {
+				MediaSegmentType.INTRO -> "跳过片头 · 按 OK"
+				MediaSegmentType.OUTRO -> "跳过片尾 · 按 OK"
+				else -> "跳过 · 按 OK"
+			}
+			org.jellyfin.androidtv.ui.base.Text(
+				text = text,
+				modifier = Modifier
+					.align(Alignment.BottomEnd)
+					.padding(end = 48.dp, bottom = 200.dp)
+					.background(Color.Black.copy(alpha = 0.65f), RoundedCornerShape(8.dp))
+					.padding(horizontal = 20.dp, vertical = 10.dp),
+				color = Color.White,
+			)
+		}
+
+		// Next episode hint near the end of an episode with a following entry in the queue.
+		val nextName = nextEpisodeName
+		val remaining = playerPositionInfo.duration - playerPositionInfo.active
+		if (nextName != null && item?.type == BaseItemKind.EPISODE && remaining > Duration.ZERO && remaining <= 20.seconds) {
+			Column(
+				modifier = Modifier
+					.align(Alignment.BottomEnd)
+					.padding(end = 48.dp, bottom = 120.dp)
+					.background(Color.Black.copy(alpha = 0.72f), RoundedCornerShape(8.dp))
+					.padding(16.dp),
+			) {
+				org.jellyfin.androidtv.ui.base.Text("即将播放下一集", color = Color.White, fontSize = 14.sp)
+				org.jellyfin.androidtv.ui.base.Text(nextName, color = Color.White, fontSize = 18.sp)
+				if (remaining <= 5.seconds) {
+					org.jellyfin.androidtv.ui.base.Text(
+						text = "${remaining.inWholeSeconds} 秒后播放",
+						color = Color.White,
+						fontSize = 14.sp,
+					)
+				}
+			}
 		}
 
 		// Right-side sheet with the playback info and the rarely changed settings.

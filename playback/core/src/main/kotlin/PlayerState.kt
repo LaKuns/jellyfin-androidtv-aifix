@@ -22,6 +22,8 @@ interface PlayerState {
 	val playbackOrder: StateFlow<PlaybackOrder>
 	val repeatMode: StateFlow<RepeatMode>
 	val scrubbing: StateFlow<Boolean>
+	/** The player is buffering (loading) the current item. */
+	val buffering: StateFlow<Boolean>
 
 	/**
 	 * The position information for the currently playing item or [PositionInfo.EMPTY]. This
@@ -80,6 +82,9 @@ class MutablePlayerState(
 	private val _scrubbing = MutableStateFlow(false)
 	override val scrubbing: StateFlow<Boolean> get() = _scrubbing.asStateFlow()
 
+	private val _buffering = MutableStateFlow(false)
+	override val buffering: StateFlow<Boolean> get() = _buffering.asStateFlow()
+
 	override val positionInfo: PositionInfo
 		get() = backendService.backend?.getPositionInfo() ?: PositionInfo.EMPTY
 
@@ -91,6 +96,10 @@ class MutablePlayerState(
 
 			override fun onVideoSizeChange(width: Int, height: Int) {
 				_videoSize.value = VideoSize(width, height)
+			}
+
+			override fun onBufferingChange(buffering: Boolean) {
+				_buffering.value = buffering
 			}
 
 			override fun onMediaStreamEnd(mediaStream: PlayableMediaStream) {

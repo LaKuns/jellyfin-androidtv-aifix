@@ -4,6 +4,7 @@ import androidx.lifecycle.Lifecycle
 import org.jellyfin.playback.core.plugin.playbackPlugin
 import org.jellyfin.playback.jellyfin.lyrics.LyricsPlayerService
 import org.jellyfin.playback.jellyfin.mediasegment.MediaSegmentService
+import org.jellyfin.playback.jellyfin.mediasegment.MediaSegmentSkipAction
 import org.jellyfin.playback.jellyfin.mediastream.JellyfinMediaStreamResolver
 import org.jellyfin.playback.jellyfin.playsession.PlaySessionService
 import org.jellyfin.playback.jellyfin.playsession.PlaySessionSocketService
@@ -15,6 +16,7 @@ fun jellyfinPlugin(
 	api: ApiClient,
 	deviceProfileBuilder: (forceHevcTranscode: Boolean) -> DeviceProfile,
 	mediaSegmentSkipTypes: Set<MediaSegmentType> = emptySet(),
+	mediaSegmentActionProvider: (MediaSegmentType) -> MediaSegmentSkipAction = { MediaSegmentSkipAction.ASK_TO_SKIP },
 	lifecycle: Lifecycle? = null,
 ) = playbackPlugin {
 	provide(JellyfinMediaStreamResolver(api, deviceProfileBuilder))
@@ -25,5 +27,5 @@ fun jellyfinPlugin(
 
 	provide(LyricsPlayerService(api))
 
-	if (mediaSegmentSkipTypes.isNotEmpty()) provide(MediaSegmentService(api, mediaSegmentSkipTypes))
+	if (mediaSegmentSkipTypes.isNotEmpty()) provide(MediaSegmentService(api, mediaSegmentSkipTypes, mediaSegmentActionProvider))
 }

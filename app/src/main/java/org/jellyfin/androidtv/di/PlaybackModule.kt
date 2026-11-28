@@ -16,6 +16,8 @@ import org.jellyfin.androidtv.ui.browsing.MainActivity
 import org.jellyfin.androidtv.ui.playback.MediaManager
 import org.jellyfin.androidtv.ui.playback.PlaybackLauncher
 import org.jellyfin.androidtv.ui.playback.VideoQueueManager
+import org.jellyfin.androidtv.ui.playback.segment.MediaSegmentAction as AppMediaSegmentAction
+import org.jellyfin.androidtv.ui.playback.segment.MediaSegmentRepository
 import org.jellyfin.androidtv.ui.playback.rewrite.RewriteMediaManager
 import org.jellyfin.androidtv.util.AndroidVersion
 import org.jellyfin.androidtv.util.PerformanceProfile
@@ -37,6 +39,7 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 import org.jellyfin.androidtv.ui.playback.PlaybackManager as LegacyPlaybackManager
+import org.jellyfin.playback.jellyfin.mediasegment.MediaSegmentSkipAction
 
 val playbackModule = module {
 	single { LegacyPlaybackManager(get()) }
@@ -141,7 +144,22 @@ fun Scope.createPlaybackManager() = playbackManager(androidContext()) {
 	install(media3SessionPlugin(get(), mediaSessionOptions))
 
 	val deviceProfileBuilder = { forceHevcTranscode: Boolean -> createDeviceProfile(androidContext(), userPreferences, get(), forceHevcTranscode = forceHevcTranscode) }
-	install(jellyfinPlugin(get(), deviceProfileBuilder, setOf(MediaSegmentType.INTRO), ProcessLifecycleOwner.get().lifecycle))
+	val mediaSegmentActionProvider: (MediaSegmentType) -> MediaSegmentSkipAction = { type ->
+		when (get<MediaSegmentRepository>().getDefaultSegmentTypeAction(type)) {
+			AppMediaSegmentAction.SKIP -> MediaSegmentSkipAction.SKIP
+			AppMediaSegmentAction.NOTHING -> MediaSegmentSkipAction.DISABLED
+			AppMediaSegmentAction.ASK_TO_SKIP -> MediaSegmentSkipAction.ASK_TO_SKIP
+		}
+	}
+	install(
+		jellyfinPlugin(
+			get(),
+			deviceProfileBuilder,
+			setOf(MediaSegmentType.INTRO, MediaSegmentType.OUTRO),
+			mediaSegmentActionProvider,
+			ProcessLifecycleOwner.get().lifecycle,
+		)
+	)
 
 	// Options
 	val userSettingPreferences = get<UserSettingPreferences>()

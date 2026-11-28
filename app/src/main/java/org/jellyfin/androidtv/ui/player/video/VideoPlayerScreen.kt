@@ -75,5 +75,10 @@ fun VideoPlayerScreen() {
 				.fillMaxSize()
 				.align(Alignment.Center)
 		)
+
+		BufferingOverlay(
+			playbackManager = playbackManager,
+			modifier = Modifier.fillMaxSize(),
+		)
 	}
 }

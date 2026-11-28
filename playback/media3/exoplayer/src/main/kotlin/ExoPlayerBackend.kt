@@ -300,8 +300,9 @@ class ExoPlayerBackend(
 		}
 
 		override fun onPlaybackStateChanged(playbackState: Int) {
-			onIsPlayingChanged(exoPlayer.isPlaying)
-		}
+		listener?.onBufferingChange(playbackState == Player.STATE_BUFFERING)
+		onIsPlayingChanged(exoPlayer.isPlaying)
+	}
 
 		override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
 			if (reason == Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM) {
