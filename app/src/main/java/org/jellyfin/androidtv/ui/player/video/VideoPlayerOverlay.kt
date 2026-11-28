@@ -110,11 +110,24 @@ fun VideoPlayerOverlay(
 	val currentSegmentState = rememberUpdatedState(currentSegment)
 	var nextEpisodeName by remember { mutableStateOf<String?>(null) }
 
+	val currentShowSettings = rememberUpdatedState(showSettings)
+
 	// The remote control is handled by the activity while the player is on screen, so it works
 	// even when the overlay hid itself and nothing holds the focus (see PlayerKeyHandler).
 	val currentVisibilityState = rememberUpdatedState(visibilityState)
 	DisposableEffect(Unit) {
 		PlayerKeyHandler.setHandler { keyCode, repeatCount ->
+			// While the settings sheet is open it owns the focus. The activity handler must not
+			// show the control bar (and steal the focus) on every key; only Back closes the
+			// sheet, everything else is left to the focused controls of the sheet.
+			if (currentShowSettings.value) {
+				if (keyCode == KeyEvent.KEYCODE_BACK) {
+					showSettings = false
+					true
+				} else {
+					false
+				}
+			} else {
 			val state = currentVisibilityState.value
 			when {
 				// Back closes the controls first and leaves the player on the second press.
@@ -170,6 +183,7 @@ fun VideoPlayerOverlay(
 				}
 
 				else -> false
+			}
 			}
 		}
 		onDispose { PlayerKeyHandler.setHandler(null) }
