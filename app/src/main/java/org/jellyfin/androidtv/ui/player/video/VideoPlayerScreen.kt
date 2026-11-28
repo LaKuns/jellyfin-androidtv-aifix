@@ -14,6 +14,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.zIndex
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.compose.ui.platform.ComposeView
 import kotlinx.coroutines.flow.map
 import org.jellyfin.androidtv.data.service.BackgroundService
 import org.jellyfin.androidtv.ui.ScreensaverLock
@@ -75,17 +78,30 @@ fun VideoPlayerScreen() {
 				.zIndex(0f),
 		)
 
-		VideoPlayerOverlay(
-			playbackManager = playbackManager,
-			mediaToastRegistry = mediaToastRegistry,
-			modifier = Modifier.zIndex(1f),
-		)
-
-		BufferingOverlay(
-			playbackManager = playbackManager,
+		// The Compose overlay (controls, hints, settings, buffering spinner) is hosted in its own
+		// Android view. Compose AndroidViews are painted in their own layer; hosting the overlay
+		// in an Android view that is added after the subtitle view makes the controls cover the
+		// subtitles (and not the other way around) on every content aspect ratio.
+		AndroidView(
+			factory = { context ->
+				ComposeView(context).apply {
+					setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+					setContent {
+						VideoPlayerOverlay(
+							playbackManager = playbackManager,
+							mediaToastRegistry = mediaToastRegistry,
+							modifier = Modifier.fillMaxSize(),
+						)
+						BufferingOverlay(
+							playbackManager = playbackManager,
+							modifier = Modifier.fillMaxSize(),
+						)
+					}
+				}
+			},
 			modifier = Modifier
 				.fillMaxSize()
-				.zIndex(2f),
+				.zIndex(1f),
 		)
 	}
 }
