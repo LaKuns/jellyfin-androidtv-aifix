@@ -60,6 +60,12 @@ fun VideoPlayerOverlay(
 	var userPaused by remember { mutableStateOf(false) }
 	val visibilityState = rememberPlayerOverlayVisibility(timeout = if (userPaused) null else 5.seconds)
 
+	// The timeout is captured when show() runs; re-show after the remember value changed so a
+	// pause by the viewer keeps the bar open instead of hiding after the normal timeout.
+	LaunchedEffect(userPaused) {
+		if (userPaused) visibilityState.show()
+	}
+
 	// Feedback for the direct seek of the hidden overlay: one short line instead of the full bar.
 	var seekHint by remember { mutableStateOf<String?>(null) }
 	var seekHintGeneration by remember { mutableStateOf(0) }
