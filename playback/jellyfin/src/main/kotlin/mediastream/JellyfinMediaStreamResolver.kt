@@ -74,7 +74,11 @@ class JellyfinMediaStreamResolver(
 					static = true,
 					tag = source.eTag,
 					liveStreamId = source.liveStreamId,
-				)
+				),
+				// Text subtitles are offered as side loaded WebVTT even for a direct play: the
+				// authored ASS styles (including an opaque box behind the text) are stripped by
+				// the server conversion, and the player renders one consistent text style.
+				externalSubtitles = mediaInfo.externalSubtitles(baseItem, source),
 			)
 		}
 

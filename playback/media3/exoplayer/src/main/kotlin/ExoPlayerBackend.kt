@@ -553,11 +553,35 @@ class ExoPlayerBackend(
 		currentTracks?.let(::applySubtitleSelection)
 	}
 
+	/** Whether the format is an ASS/SSA subtitle (the only text format with an authored box). */
+	private fun isAssSubtitleFormat(format: Format): Boolean {
+		val mimeType = format.sampleMimeType?.lowercase() ?: return false
+		return "ssa" in mimeType || "ass" in mimeType
+	}
+
+	/**
+	 * The text track groups the viewer may pick.
+	 *
+	 * When the stream carries side loaded WebVTT subtitles the embedded ASS/SSA tracks are hidden:
+	 * their authored style can draw a black box over the picture, while the side loaded WebVTT
+	 * track contains the same text with a clean style.
+	 */
+	private fun subtitleGroups(tracks: Tracks): List<Tracks.Group> {
+		val hasSideLoadedSubtitles = currentStream?.externalSubtitles?.isNotEmpty() == true
+		return tracks.groups
+			.filter { group -> group.type == C.TRACK_TYPE_TEXT }
+			.filter { group ->
+				!hasSideLoadedSubtitles || (0 until group.length).none { index ->
+					isAssSubtitleFormat(group.getTrackFormat(index))
+				}
+			}
+	}
+
 	override fun getSubtitleTracks(): List<SubtitleTrack> {
 		val tracks = currentTracks ?: readCurrentTracks() ?: return emptyList()
 
-		val subtitleTracks = tracks.groups
-			.filter { group -> group.type == C.TRACK_TYPE_TEXT }
+		val subtitleTracks = subtitleGroups(tracks)
+			
 			.flatMap { group ->
 				(0 until group.length)
 					.filter(group::isTrackSupported)
@@ -774,10 +798,9 @@ class ExoPlayerBackend(
 			.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !subtitlesEnabled)
 
 		if (subtitlesEnabled) {
-			val textGroups = tracks.groups.filter { group ->
-				group.type == C.TRACK_TYPE_TEXT &&
-					(0 until group.length).any(group::isTrackSupported)
-			}
+			val textGroups = subtitleGroups(tracks).filter { group ->
+			(0 until group.length).any(group::isTrackSupported)
+		}
 
 			// The pick of the user for this item always wins over the automatic choice.
 			val chosen = selectedSubtitleTrackId?.let { id -> findSubtitleTrack(tracks, id) }
@@ -800,8 +823,7 @@ class ExoPlayerBackend(
 	 * both variants, and the wrong one is worse than none.
 	 */
 	private fun findSubtitleTrack(tracks: Tracks, id: String): Pair<TrackGroup, Int>? =
-		tracks.groups
-			.filter { group -> group.type == C.TRACK_TYPE_TEXT }
+		subtitleGroups(tracks)
 			.flatMap { group -> (0 until group.length).map { index -> group.mediaTrackGroup to index } }
 			.firstOrNull { (group, index) -> subtitleTrackId(group, index) == id }
 
